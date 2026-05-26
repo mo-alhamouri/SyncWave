@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+.DS_Store
+
+# Local Binaries
+backend/bin/
+backend/downloads/
+
+# Frontend Build
+frontend/dist/
+
+# Test/Debug Scripts
+verify_playlist.js
+repro_error.js
+check_entries.js
+
+# Environment
+.env
