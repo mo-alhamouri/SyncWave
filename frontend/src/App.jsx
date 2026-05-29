@@ -87,11 +87,16 @@ function App() {
     setQueue([]);
 
     try {
-      const response = await fetch(`/api/info?url=${encodeURIComponent(url.trim())}`);
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to fetch video details.');
+      let data;
+      // Use Electron IPC if available
+      if (window.electron && window.electron.getInfo) {
+        data = await window.electron.getInfo(url.trim());
+        if (data.error) throw new Error(data.error);
+      } else {
+        // Fallback to API for web development
+        const response = await fetch(`/api/info?url=${encodeURIComponent(url.trim())}`);
+        data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to fetch video details.');
       }
 
       setMetadata(data);
@@ -143,101 +148,160 @@ function App() {
     setDownloadMsg(`[Queue ${index + 1}/${updatedQueue.length}] Downloading: "${activeItem.title}"...`);
     setDownloadState('downloading');
 
-    // Start SSE stream for single video in playlist
-    const targetUrl = `/api/download?url=${encodeURIComponent(activeItem.url)}&format=${format}`;
-    const eventSource = new EventSource(targetUrl);
-    activeEventSource.current = eventSource;
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-
-        switch (data.status) {
-          case 'downloading':
-            setDownloadPercent(Math.floor(data.percent || 0));
-            setDownloadSpeed(data.speed || '');
-            setDownloadEta(data.eta || '');
-            break;
-          case 'processing':
-            setDownloadPercent(100);
-            setDownloadMsg(`[Queue ${index + 1}/${updatedQueue.length}] Encoding: "${activeItem.title}"...`);
-            updatedQueue[index].status = 'processing';
-            setQueue([...updatedQueue]);
-            break;
-          case 'completed':
-            updatedQueue[index].status = 'completed';
-            setQueue([...updatedQueue]);
-
-            // Save to browser automatically
-            const fileDownloadUrl = `/api/files/${data.fileId}?ext=${data.ext}&title=${encodeURIComponent(activeItem.title)}`;
-            const link = document.createElement('a');
-            link.href = fileDownloadUrl;
-            link.setAttribute('download', `${activeItem.title}.${data.ext}`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-            // Log in history list
-            const historyItem = {
-              id: activeItem.id,
-              fileId: data.fileId,
-              title: activeItem.title,
-              thumbnail: `https://img.youtube.com/vi/${activeItem.id}/hqdefault.jpg`,
-              duration: activeItem.duration,
-              format: format,
-              ext: data.ext,
-              date: new Date().toLocaleDateString(),
-              timestamp: Date.now()
-            };
-            setHistory(prev => {
-              const next = [historyItem, ...prev];
-              localStorage.setItem('yt_download_history', JSON.stringify(next));
-              return next;
-            });
-
-            eventSource.close();
-            activeEventSource.current = null;
-            
-            // Move sequentially to next item after small delay
-            setTimeout(() => {
-              processQueueItem(index + 1, updatedQueue);
-            }, 1200);
-            break;
-          case 'error':
-            updatedQueue[index].status = 'error';
-            setQueue([...updatedQueue]);
-            eventSource.close();
-            activeEventSource.current = null;
-            // Move to next anyway to prevent blocking
-            setTimeout(() => {
-              processQueueItem(index + 1, updatedQueue);
-            }, 2000);
-            break;
-          default:
-            break;
+    // Use Electron IPC if available
+    if (window.electron && window.electron.download) {
+      window.electron.download(activeItem.url, format);
+      
+      const removeProgressListener = window.electron.onDownloadProgress((data) => {
+        if (data.status === 'processing') {
+          setDownloadPercent(100);
+          setDownloadMsg(`[Queue ${index + 1}/${updatedQueue.length}] Encoding: "${activeItem.title}"...`);
+          updatedQueue[index].status = 'processing';
+          setQueue([...updatedQueue]);
+        } else {
+          setDownloadPercent(Math.floor(data.percent || 0));
+          setDownloadSpeed(data.speed || '');
+          setDownloadEta(data.eta || '');
         }
-      } catch (err) {
-        console.error('SSE JSON error:', err);
-      }
-    };
+      });
 
-    eventSource.onerror = (err) => {
-      console.error('SSE connection error:', err);
-      updatedQueue[index].status = 'error';
-      setQueue([...updatedQueue]);
-      eventSource.close();
-      activeEventSource.current = null;
-      setTimeout(() => {
-        processQueueItem(index + 1, updatedQueue);
-      }, 2000);
-    };
+      const removeCompletedListener = window.electron.onDownloadCompleted(() => {
+        removeProgressListener();
+        removeCompletedListener();
+        removeErrorListener();
+        
+        updatedQueue[index].status = 'completed';
+        setQueue([...updatedQueue]);
+
+        // Log in history list
+        const historyItem = {
+          id: activeItem.id,
+          title: activeItem.title,
+          thumbnail: `https://img.youtube.com/vi/${activeItem.id}/hqdefault.jpg`,
+          duration: activeItem.duration,
+          format: format,
+          date: new Date().toLocaleDateString(),
+          timestamp: Date.now()
+        };
+        setHistory(prev => {
+          const next = [historyItem, ...prev];
+          localStorage.setItem('yt_download_history', JSON.stringify(next));
+          return next;
+        });
+
+        setTimeout(() => {
+          processQueueItem(index + 1, updatedQueue);
+        }, 1200);
+      });
+
+      const removeErrorListener = window.electron.onDownloadError((data) => {
+        removeProgressListener();
+        removeCompletedListener();
+        removeErrorListener();
+        
+        updatedQueue[index].status = 'error';
+        setQueue([...updatedQueue]);
+        setTimeout(() => {
+          processQueueItem(index + 1, updatedQueue);
+        }, 2000);
+      });
+
+      activeEventSource.current = { close: () => window.electron.stopDownload() };
+    } else {
+      // Start SSE stream for single video in playlist
+      const targetUrl = `/api/download?url=${encodeURIComponent(activeItem.url)}&format=${format}`;
+      const eventSource = new EventSource(targetUrl);
+      activeEventSource.current = eventSource;
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          switch (data.status) {
+            case 'downloading':
+              setDownloadPercent(Math.floor(data.percent || 0));
+              setDownloadSpeed(data.speed || '');
+              setDownloadEta(data.eta || '');
+              break;
+            case 'processing':
+              setDownloadPercent(100);
+              setDownloadMsg(`[Queue ${index + 1}/${updatedQueue.length}] Encoding: "${activeItem.title}"...`);
+              updatedQueue[index].status = 'processing';
+              setQueue([...updatedQueue]);
+              break;
+            case 'completed':
+              updatedQueue[index].status = 'completed';
+              setQueue([...updatedQueue]);
+
+              // Save to browser automatically
+              const fileDownloadUrl = `/api/files/${data.fileId}?ext=${data.ext}&title=${encodeURIComponent(activeItem.title)}`;
+              const link = document.createElement('a');
+              link.href = fileDownloadUrl;
+              link.setAttribute('download', `${activeItem.title}.${data.ext}`);
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+
+              // Log in history list
+              const historyItem = {
+                id: activeItem.id,
+                fileId: data.fileId,
+                title: activeItem.title,
+                thumbnail: `https://img.youtube.com/vi/${activeItem.id}/hqdefault.jpg`,
+                duration: activeItem.duration,
+                format: format,
+                ext: data.ext,
+                date: new Date().toLocaleDateString(),
+                timestamp: Date.now()
+              };
+              setHistory(prev => {
+                const next = [historyItem, ...prev];
+                localStorage.setItem('yt_download_history', JSON.stringify(next));
+                return next;
+              });
+
+              eventSource.close();
+              activeEventSource.current = null;
+              
+              // Move sequentially to next item after small delay
+              setTimeout(() => {
+                processQueueItem(index + 1, updatedQueue);
+              }, 1200);
+              break;
+            case 'error':
+              updatedQueue[index].status = 'error';
+              setQueue([...updatedQueue]);
+              eventSource.close();
+              activeEventSource.current = null;
+              // Move to next anyway to prevent blocking
+              setTimeout(() => {
+                processQueueItem(index + 1, updatedQueue);
+              }, 2000);
+              break;
+            default:
+              break;
+          }
+        } catch (err) {
+          console.error('SSE JSON error:', err);
+        }
+      };
+
+      eventSource.onerror = (err) => {
+        console.error('SSE connection error:', err);
+        updatedQueue[index].status = 'error';
+        setQueue([...updatedQueue]);
+        eventSource.close();
+        activeEventSource.current = null;
+        setTimeout(() => {
+          processQueueItem(index + 1, updatedQueue);
+        }, 2000);
+      };
+    }
   };
 
   const handleStopQueue = () => {
     if (activeEventSource.current && activeEventSource.current !== 'stopped') {
-      if (activeEventSource.current instanceof EventSource) {
-        activeEventSource.current.close();
-      }
+      activeEventSource.current.close();
     }
     activeEventSource.current = 'stopped';
     setQueueActive(false);
@@ -275,85 +339,143 @@ function App() {
       setDownloadMsg('Preparing downloader...');
       setError('');
 
-      const targetUrl = `/api/download?url=${encodeURIComponent(url.trim())}&format=${format}`;
-      const eventSource = new EventSource(targetUrl);
-      activeEventSource.current = eventSource;
-
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-
-          switch (data.status) {
-            case 'started':
-              setDownloadState('started');
-              setDownloadMsg(data.message);
-              break;
-            case 'downloading':
-              setDownloadState('downloading');
-              setDownloadPercent(Math.floor(data.percent || 0));
-              setDownloadSpeed(data.speed || '');
-              setDownloadEta(data.eta || '');
-              setDownloadMsg('Downloading streams from YouTube...');
-              break;
-            case 'processing':
-              setDownloadState('processing');
-              setDownloadPercent(100);
-              setDownloadMsg(data.message || 'Processing and encoding file...');
-              break;
-            case 'completed':
-              setDownloadState('completed');
-              setDownloadMsg('Download ready! Transferring file...');
-              setActiveFileId(data.fileId);
-              
-              // Trigger automatic file download in browser
-              const downloadUrl = `/api/files/${data.fileId}?ext=${data.ext}&title=${encodeURIComponent(metadata.title)}`;
-              const link = document.createElement('a');
-              link.href = downloadUrl;
-              link.setAttribute('download', `${metadata.title}.${data.ext}`);
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-
-              // Update session history
-              const historyItem = {
-                id: metadata.id,
-                fileId: data.fileId,
-                title: metadata.title,
-                thumbnail: metadata.thumbnail,
-                duration: metadata.duration,
-                format: format,
-                ext: data.ext,
-                date: new Date().toLocaleDateString(),
-                timestamp: Date.now()
-              };
-              const updatedHistory = [historyItem, ...history];
-              setHistory(updatedHistory);
-              localStorage.setItem('yt_download_history', JSON.stringify(updatedHistory));
-
-              eventSource.close();
-              activeEventSource.current = null;
-              break;
-            case 'error':
-              setDownloadState('error');
-              setError(data.error || 'An error occurred during download conversion.');
-              eventSource.close();
-              activeEventSource.current = null;
-              break;
-            default:
-              break;
+      if (window.electron && window.electron.download) {
+        window.electron.download(url.trim(), format);
+        
+        const removeProgressListener = window.electron.onDownloadProgress((data) => {
+          if (data.status === 'processing') {
+            setDownloadState('processing');
+            setDownloadPercent(100);
+            setDownloadMsg(data.message || 'Processing and encoding file...');
+          } else {
+            setDownloadState('downloading');
+            setDownloadPercent(Math.floor(data.percent || 0));
+            setDownloadSpeed(data.speed || '');
+            setDownloadEta(data.eta || '');
+            setDownloadMsg('Downloading streams from YouTube...');
           }
-        } catch (e) {
-          console.error('Error parsing SSE data:', e);
-        }
-      };
+        });
 
-      eventSource.onerror = (err) => {
-        console.error('EventSource error:', err);
-        setDownloadState('error');
-        setError('Connection to downloader service was interrupted.');
-        eventSource.close();
-        activeEventSource.current = null;
-      };
+        const removeCompletedListener = window.electron.onDownloadCompleted((data) => {
+          removeProgressListener();
+          removeCompletedListener();
+          removeErrorListener();
+
+          setDownloadState('completed');
+          setDownloadMsg('Download ready! File saved to your Downloads/SyncWave folder.');
+          
+          const historyItem = {
+            id: metadata.id,
+            title: metadata.title,
+            thumbnail: metadata.thumbnail,
+            duration: metadata.duration,
+            format: format,
+            date: new Date().toLocaleDateString(),
+            timestamp: Date.now()
+          };
+          const updatedHistory = [historyItem, ...history];
+          setHistory(updatedHistory);
+          localStorage.setItem('yt_download_history', JSON.stringify(updatedHistory));
+          activeEventSource.current = null;
+        });
+
+        const removeErrorListener = window.electron.onDownloadError((data) => {
+          removeProgressListener();
+          removeCompletedListener();
+          removeErrorListener();
+          setDownloadState('error');
+          setError(data.error || 'An error occurred during download conversion.');
+          activeEventSource.current = null;
+        });
+
+        activeEventSource.current = { close: () => window.electron.stopDownload() };
+      } else {
+        const targetUrl = `/api/download?url=${encodeURIComponent(url.trim())}&format=${format}`;
+        const eventSource = new EventSource(targetUrl);
+        activeEventSource.current = eventSource;
+
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+
+            switch (data.status) {
+              case 'started':
+                setDownloadState('started');
+                setDownloadMsg(data.message);
+                break;
+              case 'downloading':
+                setDownloadState('downloading');
+                setDownloadPercent(Math.floor(data.percent || 0));
+                setDownloadSpeed(data.speed || '');
+                setDownloadEta(data.eta || '');
+                setDownloadMsg('Downloading streams from YouTube...');
+                break;
+              case 'processing':
+                setDownloadState('processing');
+                setDownloadPercent(100);
+                setDownloadMsg(data.message || 'Processing and encoding file...');
+                break;
+              case 'completed':
+                setDownloadState('completed');
+                setDownloadMsg('Download ready! Transferring file...');
+                setActiveFileId(data.fileId);
+                
+                // Trigger automatic file download in browser
+                const downloadUrl = `/api/files/${data.fileId}?ext=${data.ext}&title=${encodeURIComponent(metadata.title)}`;
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.setAttribute('download', `${metadata.title}.${data.ext}`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                // Update session history
+                const historyItem = {
+                  id: metadata.id,
+                  fileId: data.fileId,
+                  title: metadata.title,
+                  thumbnail: metadata.thumbnail,
+                  duration: metadata.duration,
+                  format: format,
+                  ext: data.ext,
+                  date: new Date().toLocaleDateString(),
+                  timestamp: Date.now()
+                };
+                const updatedHistory = [historyItem, ...history];
+                setHistory(updatedHistory);
+                localStorage.setItem('yt_download_history', JSON.stringify(updatedHistory));
+
+                eventSource.close();
+                activeEventSource.current = null;
+                break;
+              case 'error':
+                setDownloadState('error');
+                setError(data.error || 'An error occurred during download conversion.');
+                eventSource.close();
+                activeEventSource.current = null;
+                break;
+              default:
+                break;
+            }
+          } catch (e) {
+            console.error('Error parsing SSE data:', e);
+          }
+        };
+
+        eventSource.onerror = (err) => {
+          console.error('EventSource error:', err);
+          setDownloadState('error');
+          setError('Connection to downloader service was interrupted.');
+          eventSource.close();
+          activeEventSource.current = null;
+        };
+      }
+    }
+  };
+
+  const handleOpenDownloads = () => {
+    if (window.electron && window.electron.openDownloadsFolder) {
+      window.electron.openDownloadsFolder();
     }
   };
 
@@ -756,11 +878,18 @@ function App() {
         <div className="history-section">
           <div className="history-header">
             <span>Recent Downloads</span>
-            {history.length > 0 && (
-              <button onClick={clearHistory} className="clear-btn">
-                Clear Session
-              </button>
-            )}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              {window.electron && (
+                <button onClick={handleOpenDownloads} className="clear-btn">
+                  Open Downloads
+                </button>
+              )}
+              {history.length > 0 && (
+                <button onClick={clearHistory} className="clear-btn">
+                  Clear Session
+                </button>
+              )}
+            </div>
           </div>
 
           {history.length === 0 ? (

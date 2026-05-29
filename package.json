@@ -1,16 +1,50 @@
 {
   "name": "youtube-downloader-root",
   "version": "1.0.0",
-  "private": true,
+  "main": "electron/main.js",
   "scripts": {
     "setup": "npm install && npm run setup:backend && npm run setup:frontend",
     "setup:backend": "npm install --prefix backend",
     "setup:frontend": "npm install --prefix frontend",
-    "dev:backend": "npm run dev --prefix backend",
     "dev:frontend": "npm run dev --prefix frontend",
-    "dev": "concurrently --kill-others \"npm run dev:backend\" \"npm run dev:frontend\""
+    "dev": "concurrently --kill-others \"npm run dev:frontend\" \"wait-on http://localhost:5173 && electron .\"",
+    "start": "electron .",
+    "build:frontend": "npm run build --prefix frontend",
+    "dist": "npm run build:frontend && electron-builder"
+  },
+  "build": {
+    "appId": "com.syncwave.downloader",
+    "productName": "SyncWave Downloader",
+    "directories": {
+      "output": "dist_electron"
+    },
+    "files": [
+      "electron/**/*",
+      "frontend/dist/**/*",
+      "backend/**/*",
+      "!backend/node_modules/**/*",
+      "!backend/downloads/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        "dmg"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    }
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "electron-is-dev": "^2.0.0",
+    "wait-on": "^7.2.0"
+  },
+  "dependencies": {
+    "fix-path": "^4.0.0"
   }
 }

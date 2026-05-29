@@ -1,6 +1,12 @@
 # SyncWave Downloader 🌊
 
-A modern, high-performance YouTube downloader that supports single videos and entire playlists. Built with a beautiful glassmorphic UI and powered by `yt-dlp`.
+A modern, high-performance **Desktop Application** for downloading YouTube videos and entire playlists. Built with React and Electron, powered by `yt-dlp`.
+
+## ✨ Why Desktop?
+
+- **No More Throttling**: By running locally, you use your own home IP, bypassing the "Too Many Requests" (429) errors common on web-based hosters.
+- **Privacy First**: No video data ever touches a third-party server.
+- **Fast & Reliable**: Direct downloads from YouTube to your machine.
 
 ## ✨ Features
 
@@ -11,44 +17,26 @@ A modern, high-performance YouTube downloader that supports single videos and en
     - **Stop/Cancel**: Abort the entire download process at any time.
 - **High Quality**: Extract best quality MP3 audio or MP4 video (up to 1080p).
 - **Responsive UI**: Modern, dark-mode design with interactive progress tracking.
-- **Automatic Cleanup**: Temporary files are automatically managed to save disk space.
+- **Open Downloads**: One-click access to your downloaded files.
 
-## 🚀 Quick Start
+## 🚀 Getting Started
 
-### Prerequisites
-- [Node.js](https://nodejs.org/) (v18 or higher)
-- [FFmpeg](https://ffmpeg.org/) (automatically installed via package, but system install recommended for production)
+### Installation
+*Installers for Mac and Windows coming soon to our official website!*
 
-### Local Setup
+### Local Development
 1. **Clone and Setup**:
    ```bash
    npm run setup
    ```
-2. **Run in Development**:
+2. **Run the App**:
    ```bash
    npm run dev
    ```
-   - Frontend: `http://localhost:5173`
-   - Backend: `http://localhost:5001`
-
-## 📦 Deployment
-
-This project is production-ready and configured for one-click deployment on platforms like **Railway** or **Render**.
-
-1. **Build the frontend**:
-   ```bash
-   cd frontend && npm run build
-   ```
-2. **Start the production server**:
-   ```bash
-   cd backend && npm start
-   ```
-
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed hosting instructions.
 
 ## 🛠 Tech Stack
-- **Frontend**: React 19, Vite, Tailwind-inspired CSS.
-- **Backend**: Node.js, Express, Server-Sent Events (SSE).
+- **Desktop**: Electron.
+- **Frontend**: React 19, Vite.
 - **Engine**: yt-dlp, FFmpeg.
 
 ## 📜 License
