@@ -98,7 +98,7 @@ function App() {
     if (index >= currentQueue.length) {
       setQueueActive(false);
       setDownloadState('completed');
-      setDownloadMsg(`All ${currentQueue.length} downloads completed!`);
+      setDownloadMsg(`All ${currentQueue.length} downloads completed 100%`);
       return;
     }
 
@@ -217,7 +217,7 @@ function App() {
         const removeCompletedListener = window.electron.onDownloadCompleted(() => {
           cleanup();
           setDownloadState('completed');
-          setDownloadMsg('Download Complete! Saved to your Downloads folder.');
+          setDownloadMsg('Download Complete! Saved to your Downloads folder 100%');
           
           const historyItem = {
             id: metadata.id,
@@ -406,7 +406,7 @@ function App() {
         <div className="history-header">
           <span>Recent Downloads</span>
           {history.length > 0 && (
-            <button onClick={clearHistory} className="clear-btn">Clear</button>
+            <button onClick={clearHistory} className="clear-btn">Clear History</button>
           )}
         </div>
         <div className="history-list">

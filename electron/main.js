@@ -235,8 +235,19 @@ ipcMain.handle('get-info', async (event, videoUrl) => {
 ipcMain.on('start-download', (event, url, format) => {
     if (!ytDlpWrap) return;
 
-    const outputPath = path.join(downloadsDir, `%(title)s.%(ext)s`);
-    let ytDlpArgs = [url, ...getCommonFlags(), '--ffmpeg-location', ffmpeg.path, '-o', outputPath];
+    // Use absolute path for output to ensure it lands in the right folder
+    const outputPath = path.join(downloadsDir, '%(title)s.%(ext)s');
+    
+    let ytDlpArgs = [
+        url, 
+        ...getCommonFlags(), 
+        '--ffmpeg-location', ffmpeg.path, 
+        '-o', outputPath,
+        '--no-part', // Avoid .part files which can cause confusion if small
+    ];
+
+    console.log(`[INFO] Starting Download: ${url} to ${downloadsDir}`);
+    console.log(`[INFO] Args: ${ytDlpArgs.join(' ')}`);
 
     // High Quality Formats Mapping
     if (format === 'mp3' || format === 'mp3-320') {
@@ -273,13 +284,15 @@ ipcMain.on('start-download', (event, url, format) => {
     });
 
     currentDownloadProcess.on('ytDlpEvent', (event, data) => {
+        // Log all yt-dlp events for debugging
+        console.log(`[YT-DLP] ${data}`);
         if (data.includes('Extracting audio') || data.includes('Destination:')) {
             mainWindow.webContents.send('download-progress', { status: 'processing', message: 'Finalizing...' });
         }
     });
 
     currentDownloadProcess.on('close', () => {
-        console.log(`[INFO] Download process closed for: ${url}`);
+        console.log(`[INFO] Download process completed successfully for: ${url}`);
         mainWindow.webContents.send('download-completed', { message: 'Download finished!' });
         currentDownloadProcess = null;
     });
