@@ -156,8 +156,8 @@ ipcMain.handle('get-info', async (event, videoUrl) => {
     try {
         console.log(`[INFO] Analyzing: ${targetUrl}`);
         
-        // Phase 1: High-Speed Metadata
-        let metadata = await ytDlpWrap.getVideoInfo([
+        // 1. PHASE 1: Always check for playlist first
+        let rawResult = await ytDlpWrap.getVideoInfo([
             targetUrl, 
             '--flat-playlist', 
             '--dump-single-json',
@@ -166,23 +166,29 @@ ipcMain.handle('get-info', async (event, videoUrl) => {
             '--js-runtime', 'node'
         ]);
         
-        // 1. Detect if it's a Playlist
+        // Fix for yt-dlp-wrap returning multiple JSON objects (e.g. version info)
+        let metadata = Array.isArray(rawResult) 
+            ? rawResult.find(o => o && o.id && (o.title || o.fulltitle) && o._version === undefined) 
+            : rawResult;
+
+        if (!metadata) {
+            metadata = Array.isArray(rawResult) ? rawResult[0] : rawResult;
+        }
+
+        // 2. DETECT TYPE (Strict detection to avoid duplication)
+        // Only treat as playlist if explicit type is 'playlist' or it has multiple real entries
         const isPlaylist = (metadata && metadata._type === 'playlist') || 
-                           (metadata && Array.isArray(metadata.entries) && metadata.entries.length > 1) ||
-                           (Array.isArray(metadata) && metadata.length > 1);
+                           (metadata && Array.isArray(metadata.entries) && metadata.entries.length > 1);
 
         if (isPlaylist) {
-            const entries = Array.isArray(metadata) 
-                ? metadata.filter(e => e && e.id && e.id !== e.playlist_id)
-                : (metadata.entries || []).filter(e => e && e.id);
-            
-            const first = Array.isArray(metadata) ? (metadata.find(e => e.playlist_title) || metadata[0]) : metadata;
+            const entries = metadata.entries.filter(e => e && e.id && e.id !== metadata.id);
+            console.log(`[INFO] Playlist detected: "${metadata.title}" (${entries.length} items)`);
             
             return {
                 isPlaylist: true,
-                id: first.playlist_id || first.id,
-                title: first.playlist_title || first.title || 'Untitled Playlist',
-                channel: first.playlist_uploader || first.uploader || first.channel || 'Unknown Channel',
+                id: metadata.id,
+                title: metadata.title || 'Untitled Playlist',
+                channel: metadata.uploader || metadata.channel || 'Unknown Channel',
                 thumbnail: `https://i.ytimg.com/vi/${entries[0]?.id}/hqdefault.jpg`,
                 videoCount: entries.length,
                 entries: entries.map((e, index) => ({
@@ -195,15 +201,16 @@ ipcMain.handle('get-info', async (event, videoUrl) => {
             };
         }
 
-        // 2. Single Video Processing
-        // Force deep info to get accurate views/channel
-        console.log("[INFO] Running Deep Analysis...");
-        metadata = await ytDlpWrap.getVideoInfo([
+        // 3. SINGLE VIDEO PROCESSING
+        console.log("[INFO] Running High-Quality Analysis...");
+        let deepRaw = await ytDlpWrap.getVideoInfo([
             targetUrl,
             '--no-check-certificates',
             '--no-warnings',
             '--js-runtime', 'node'
         ]);
+        
+        metadata = Array.isArray(deepRaw) ? deepRaw.find(o => o && o.id && o._version === undefined) || deepRaw[0] : deepRaw;
 
         const videoId = metadata.id || targetUrl.match(/(?:v=|\/|embed\/|watch\?v=)([0-9A-Za-z_-]{11})/)?.[1];
         const thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
@@ -219,7 +226,7 @@ ipcMain.handle('get-info', async (event, videoUrl) => {
             description: metadata.description ? metadata.description.slice(0, 200) + '...' : '',
         };
 
-        console.log(`[INFO] Done: "${response.title}" | Thumb: ${response.thumbnail}`);
+        console.log(`[INFO] Done: "${response.title}" | ID: ${response.id}`);
         return response;
 
     } catch (error) {
@@ -245,6 +252,8 @@ ipcMain.on('start-download', (event, url, format) => {
         ytDlpArgs.push('-x', '--audio-format', 'm4a');
     } else if (format === '4k') {
         ytDlpArgs.push('-f', 'bestvideo[height<=2160]+bestaudio/best[height<=2160]');
+    } else if (format === 'webm-4k') {
+        ytDlpArgs.push('-f', 'bestvideo[ext=webm][height<=2160]+bestaudio[ext=webm]/best[ext=webm]');
     } else if (format === '1440p') {
         ytDlpArgs.push('-f', 'bestvideo[height<=1440]+bestaudio/best[height<=1440]');
     } else if (format === '1080p') {
