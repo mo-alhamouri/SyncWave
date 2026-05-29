@@ -2,7 +2,6 @@ const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const isDev = require('electron-is-dev');
-const { v4: uuidv4 } = require('uuid');
 const ffmpeg = require('@ffmpeg-installer/ffmpeg');
 const fixPath = require('fix-path');
 
@@ -88,8 +87,8 @@ async function initYtdlp() {
 
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 1100,
-        height: 800,
+        width: 1200,
+        height: 850,
         title: "SyncWave Downloader",
         backgroundColor: "#080b11",
         webPreferences: {
@@ -138,7 +137,10 @@ const getCommonFlags = () => {
     const flags = [
         '--no-check-certificates',
         '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        '--geo-bypass'
+        '--geo-bypass',
+        '--no-warnings',
+        '--ignore-config',
+        '--js-runtime', 'node'
     ];
     if (fs.existsSync(cookiesPath)) {
         flags.push('--cookies', cookiesPath);
@@ -149,64 +151,39 @@ const getCommonFlags = () => {
 ipcMain.handle('get-info', async (event, videoUrl) => {
     if (!ytDlpWrap) return { error: 'yt-dlp not initialized' };
 
-    let targetUrl = videoUrl.trim();
-    if (targetUrl.includes('list=')) {
-        try {
-            const urlObj = new URL(targetUrl);
-            const playlistId = urlObj.searchParams.get('list');
-            if (playlistId) {
-                targetUrl = `https://www.youtube.com/playlist?list=${playlistId}`;
-            }
-        } catch (e) {
-            const match = targetUrl.match(/[&?]list=([^&]+)/);
-            if (match && match[1]) {
-                targetUrl = `https://www.youtube.com/playlist?list=${match[1]}`;
-            }
-        }
-    }
-
+    const targetUrl = videoUrl.trim();
+    
     try {
-        // Flat playlist info
-        const flatMetadata = await ytDlpWrap.getVideoInfo([
+        console.log(`[INFO] Analyzing: ${targetUrl}`);
+        
+        // Phase 1: High-Speed Metadata
+        let metadata = await ytDlpWrap.getVideoInfo([
             targetUrl, 
             '--flat-playlist', 
             '--dump-single-json',
-            ...getCommonFlags()
+            '--no-check-certificates',
+            '--no-warnings',
+            '--js-runtime', 'node'
         ]);
         
-        let isPlaylist = false;
-        let entries = [];
-        let playlistTitle = 'Untitled Playlist';
-        let playlistId = '';
-        let channel = 'Unknown Channel';
-
-        if (Array.isArray(flatMetadata)) {
-            if (flatMetadata.length > 0) {
-                const filtered = flatMetadata.filter(e => e && e.id && (e._type === 'url' || !e._type) && e.id !== e.playlist_id);
-                if (filtered.length > 0 || flatMetadata.some(e => e.playlist_id)) {
-                    isPlaylist = true;
-                    entries = filtered;
-                    const first = flatMetadata.find(e => e.playlist_title || e.playlist || e.playlist_id) || flatMetadata[0];
-                    playlistTitle = first.playlist_title || first.playlist || playlistTitle;
-                    playlistId = first.playlist_id || playlistId;
-                    channel = first.playlist_uploader || first.playlist_channel || channel;
-                }
-            }
-        } else if (flatMetadata && (flatMetadata._type === 'playlist' || Array.isArray(flatMetadata.entries))) {
-            isPlaylist = true;
-            const rawEntries = Array.isArray(flatMetadata.entries) ? flatMetadata.entries : [];
-            entries = rawEntries.filter(e => e && e.id && (e._type === 'url' || !e._type));
-            playlistTitle = flatMetadata.title || playlistTitle;
-            playlistId = flatMetadata.id || playlistId;
-            channel = flatMetadata.uploader || flatMetadata.channel || channel;
-        }
+        // 1. Detect if it's a Playlist
+        const isPlaylist = (metadata && metadata._type === 'playlist') || 
+                           (metadata && Array.isArray(metadata.entries) && metadata.entries.length > 1) ||
+                           (Array.isArray(metadata) && metadata.length > 1);
 
         if (isPlaylist) {
+            const entries = Array.isArray(metadata) 
+                ? metadata.filter(e => e && e.id && e.id !== e.playlist_id)
+                : (metadata.entries || []).filter(e => e && e.id);
+            
+            const first = Array.isArray(metadata) ? (metadata.find(e => e.playlist_title) || metadata[0]) : metadata;
+            
             return {
                 isPlaylist: true,
-                id: playlistId,
-                title: playlistTitle,
-                channel: channel,
+                id: first.playlist_id || first.id,
+                title: first.playlist_title || first.title || 'Untitled Playlist',
+                channel: first.playlist_uploader || first.uploader || first.channel || 'Unknown Channel',
+                thumbnail: `https://i.ytimg.com/vi/${entries[0]?.id}/hqdefault.jpg`,
                 videoCount: entries.length,
                 entries: entries.map((e, index) => ({
                     index: index + 1,
@@ -218,50 +195,62 @@ ipcMain.handle('get-info', async (event, videoUrl) => {
             };
         }
 
-        // Single video info
-        const metadata = await ytDlpWrap.getVideoInfo([videoUrl, ...getCommonFlags()]);
-        return {
+        // 2. Single Video Processing
+        // Force deep info to get accurate views/channel
+        console.log("[INFO] Running Deep Analysis...");
+        metadata = await ytDlpWrap.getVideoInfo([
+            targetUrl,
+            '--no-check-certificates',
+            '--no-warnings',
+            '--js-runtime', 'node'
+        ]);
+
+        const videoId = metadata.id || targetUrl.match(/(?:v=|\/|embed\/|watch\?v=)([0-9A-Za-z_-]{11})/)?.[1];
+        const thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+        
+        const response = {
             isPlaylist: false,
-            id: metadata.id,
-            title: metadata.title,
-            thumbnail: metadata.thumbnail || (metadata.thumbnails && metadata.thumbnails.length ? metadata.thumbnails[metadata.thumbnails.length - 1].url : null),
-            duration: metadata.duration,
-            viewCount: metadata.view_count,
-            channel: metadata.channel,
+            id: videoId,
+            title: metadata.title || metadata.fulltitle || 'Untitled Video',
+            thumbnail: thumbnail,
+            duration: metadata.duration || 0,
+            viewCount: metadata.view_count || metadata.viewCount || 0,
+            channel: metadata.channel || metadata.uploader || 'Unknown Channel',
             description: metadata.description ? metadata.description.slice(0, 200) + '...' : '',
         };
+
+        console.log(`[INFO] Done: "${response.title}" | Thumb: ${response.thumbnail}`);
+        return response;
+
     } catch (error) {
-        return { error: error.message };
+        console.error('[ERROR] Analysis failed:', error.message);
+        return { error: 'Could not analyze video. Please check the URL.' };
     }
 });
 
 ipcMain.on('start-download', (event, url, format) => {
     if (!ytDlpWrap) return;
 
-    const fileExtension = format === 'mp3' ? 'mp3' : 'mp4';
-    // We use original title or uuid
     const outputPath = path.join(downloadsDir, `%(title)s.%(ext)s`);
+    let ytDlpArgs = [url, ...getCommonFlags(), '--ffmpeg-location', ffmpeg.path, '-o', outputPath];
 
-    let ytDlpArgs = [];
-    if (format === 'mp3') {
-        ytDlpArgs = [
-            url,
-            ...getCommonFlags(),
-            '-x',
-            '--audio-format', 'mp3',
-            '--audio-quality', '0',
-            '--ffmpeg-location', ffmpeg.path,
-            '-o', outputPath
-        ];
+    // High Quality Formats Mapping
+    if (format === 'mp3' || format === 'mp3-320') {
+        ytDlpArgs.push('-x', '--audio-format', 'mp3', '--audio-quality', '0'); 
+    } else if (format === 'flac') {
+        ytDlpArgs.push('-x', '--audio-format', 'flac');
+    } else if (format === 'wav') {
+        ytDlpArgs.push('-x', '--audio-format', 'wav');
+    } else if (format === 'aac') {
+        ytDlpArgs.push('-x', '--audio-format', 'm4a');
+    } else if (format === '4k') {
+        ytDlpArgs.push('-f', 'bestvideo[height<=2160]+bestaudio/best[height<=2160]');
+    } else if (format === '1440p') {
+        ytDlpArgs.push('-f', 'bestvideo[height<=1440]+bestaudio/best[height<=1440]');
+    } else if (format === '1080p') {
+        ytDlpArgs.push('-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]');
     } else {
-        ytDlpArgs = [
-            url,
-            ...getCommonFlags(),
-            '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            '--merge-output-format', 'mp4',
-            '--ffmpeg-location', ffmpeg.path,
-            '-o', outputPath
-        ];
+        ytDlpArgs.push('-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best');
     }
 
     currentDownloadProcess = ytDlpWrap.exec(ytDlpArgs);
@@ -276,7 +265,7 @@ ipcMain.on('start-download', (event, url, format) => {
 
     currentDownloadProcess.on('ytDlpEvent', (event, data) => {
         if (data.includes('Extracting audio') || data.includes('Destination:')) {
-            mainWindow.webContents.send('download-progress', { status: 'processing', message: 'Converting...' });
+            mainWindow.webContents.send('download-progress', { status: 'processing', message: 'Finalizing...' });
         }
     });
 
