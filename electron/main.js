@@ -244,14 +244,11 @@ ipcMain.on('start-download', (event, url, format) => {
         ...getCommonFlags(), 
         '--ffmpeg-location', ffmpeg.path, 
         '-o', outputPath,
-        '--newline', // Force progress updates on new lines
-        '--no-part'
+        '--newline'
     ];
 
     console.log(`[DOWNLOAD] Target URL: ${url}`);
-    console.log(`[DOWNLOAD] Target Format: ${format}`);
-    console.log(`[DOWNLOAD] Path: ${downloadsDir}`);
-
+    
     // High Quality Formats Mapping
     if (format === 'mp3' || format === 'mp3-320') {
         ytDlpArgs.push('-x', '--audio-format', 'mp3', '--audio-quality', '0'); 
@@ -262,17 +259,18 @@ ipcMain.on('start-download', (event, url, format) => {
     } else if (format === 'aac') {
         ytDlpArgs.push('-x', '--audio-format', 'm4a');
     } else if (format === '4k') {
-        ytDlpArgs.push('-f', 'bestvideo[height<=2160]+bestaudio/best[height<=2160]');
+        ytDlpArgs.push('-f', 'bestvideo[height<=2160]+bestaudio/best[height<=2160]', '--merge-output-format', 'mp4');
     } else if (format === 'webm-4k') {
         ytDlpArgs.push('-f', 'bestvideo[ext=webm][height<=2160]+bestaudio[ext=webm]/best[ext=webm]');
     } else if (format === '1440p') {
-        ytDlpArgs.push('-f', 'bestvideo[height<=1440]+bestaudio/best[height<=1440]');
+        ytDlpArgs.push('-f', 'bestvideo[height<=1440]+bestaudio/best[height<=1440]', '--merge-output-format', 'mp4');
     } else if (format === '1080p') {
-        ytDlpArgs.push('-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]');
+        ytDlpArgs.push('-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]', '--merge-output-format', 'mp4');
     } else if (format === '720p') {
-        ytDlpArgs.push('-f', 'bestvideo[height<=720]+bestaudio/best[height<=720]');
+        ytDlpArgs.push('-f', 'bestvideo[height<=720]+bestaudio/best[height<=720]', '--merge-output-format', 'mp4');
     } else {
-        ytDlpArgs.push('-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best');
+        // Default HD
+        ytDlpArgs.push('-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', '--merge-output-format', 'mp4');
     }
 
     try {

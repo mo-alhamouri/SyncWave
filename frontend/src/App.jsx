@@ -50,6 +50,14 @@ function App() {
 
   const [history, setHistory] = useState([]);
 
+  // RESET UI IF FORMAT CHANGES
+  useEffect(() => {
+    if (downloadState === 'completed' || downloadState === 'error') {
+      setDownloadState('idle');
+      setDownloadMsg('');
+    }
+  }, [format]);
+
   useEffect(() => {
     const saved = localStorage.getItem('syncwave_history');
     if (saved) setHistory(JSON.parse(saved));
@@ -62,15 +70,30 @@ function App() {
     setLoading(true);
     setError('');
     setMetadata(null);
-    setDownloadState('idle');
+    setDownloadState('started');
+    setDownloadPercent(0);
+    setDownloadMsg('Initializing Engine (10%)...');
     setQueueActive(false);
     setQueue([]);
 
     try {
       if (window.electron && window.electron.getInfo) {
+        // Step 1: Pre-Analysis
+        setDownloadPercent(25);
+        setDownloadMsg('Securing Connection (25%)...');
+        
+        // Short delay to show progress
+        await new Promise(r => setTimeout(r, 400));
+        
+        setDownloadPercent(45);
+        setDownloadMsg('Analyzing Metadata (45%)...');
+
         const data = await window.electron.getInfo(url.trim());
         if (data.error) throw new Error(data.error);
         
+        setDownloadPercent(85);
+        setDownloadMsg('Mapping High-Quality Streams (85%)...');
+
         // Auto-select all for playlists
         if (data.isPlaylist) {
           const selection = {};
@@ -78,11 +101,14 @@ function App() {
           setSelectedItemIds(selection);
         }
         
+        await new Promise(r => setTimeout(r, 300));
+        setDownloadPercent(100);
         setMetadata(data);
       }
     } catch (err) {
       console.error(err);
       setError(err.message || 'Error occurred while loading details.');
+      setDownloadState('idle');
     } finally {
       setLoading(false);
     }
@@ -196,7 +222,8 @@ function App() {
       processQueueItem(0, initialQueue);
     } else {
       setDownloadState('started');
-      setDownloadMsg('Initializing Lightning-Fast Engine...');
+      setDownloadPercent(5);
+      setDownloadMsg('Initializing Engine (5%)...');
       
       if (window.electron && window.electron.download) {
         window.electron.download(url.trim(), format);
@@ -205,13 +232,15 @@ function App() {
           if (data.status === 'processing') {
             setDownloadState('processing');
             setDownloadPercent(100);
-            setDownloadMsg('Studio Quality Encoding...');
+            setDownloadMsg('Finalizing File (95%)...');
           } else {
             setDownloadState('downloading');
-            setDownloadPercent(Math.floor(data.percent || 0));
+            // Ensure we start progress from at least 10% once download starts
+            const progress = Math.max(10, Math.floor(data.percent || 0));
+            setDownloadPercent(progress);
             setDownloadSpeed(data.speed || '');
             setDownloadEta(data.eta || '');
-            setDownloadMsg('Downloading Ultra-HD Streams...');
+            setDownloadMsg(`Downloading High-Quality Stream (${progress}%)...`);
           }
         });
 
@@ -399,7 +428,14 @@ function App() {
                   )}
                 </div>
                 <div className="progress-bar-bg"><div className="progress-bar-fill" style={{ width: `${downloadPercent}%` }}></div></div>
-                <button onClick={() => activeEventSource.current.close()} className="stop-button">Stop Process</button>
+                <button 
+                  onClick={() => activeEventSource.current.close()} 
+                  className="stop-button"
+                  disabled={downloadState === 'completed'}
+                  style={{ opacity: downloadState === 'completed' ? 0.5 : 1, cursor: downloadState === 'completed' ? 'not-allowed' : 'pointer' }}
+                >
+                  Stop Process
+                </button>
               </div>
             )}
           </div>
