@@ -98,7 +98,8 @@ function App() {
     if (index >= currentQueue.length) {
       setQueueActive(false);
       setDownloadState('completed');
-      setDownloadMsg(`All ${currentQueue.length} downloads completed 100%`);
+      setDownloadMsg(`All ${currentQueue.length} downloads completed`);
+      setDownloadPercent(100);
       return;
     }
 
@@ -217,7 +218,8 @@ function App() {
         const removeCompletedListener = window.electron.onDownloadCompleted(() => {
           cleanup();
           setDownloadState('completed');
-          setDownloadMsg('Download Complete! Saved to your Downloads folder 100%');
+          setDownloadMsg('Download Complete! Saved to your Downloads folder');
+          setDownloadPercent(100);
           
           const historyItem = {
             id: metadata.id,
@@ -392,7 +394,9 @@ function App() {
               <div className="progress-panel">
                 <div className="progress-header">
                   <span>{downloadMsg}</span>
-                  <span className="progress-pct">{downloadPercent}%</span>
+                  {(downloadState === 'downloading' || downloadState === 'processing') && (
+                    <span className="progress-pct">{downloadPercent}%</span>
+                  )}
                 </div>
                 <div className="progress-bar-bg"><div className="progress-bar-fill" style={{ width: `${downloadPercent}%` }}></div></div>
                 <button onClick={() => activeEventSource.current.close()} className="stop-button">Stop Process</button>

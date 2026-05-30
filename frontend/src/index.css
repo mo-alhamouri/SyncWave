@@ -120,6 +120,36 @@ body {
   width: 100%;
 }
 
+.video-channel {
+  font-size: 1rem;
+  color: var(--secondary-color);
+  font-weight: 600;
+  margin-bottom: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.video-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin-bottom: 2rem; /* Increased spacing to format options */
+}
+
+.quality-select-inline {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--panel-border);
+  color: white;
+  padding: 0.4rem 0.8rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  outline: none;
+  cursor: pointer;
+}
+
 .playlist-layout {
   display: grid;
   grid-template-columns: 350px 1fr;
