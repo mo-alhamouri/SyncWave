@@ -29,20 +29,38 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [metadata, setMetadata] = useState(null);
   const [error, setError] = useState('');
-  const [format, setFormat] = useState('mp3-320'); // Studio default
+  const [format, setFormat] = useState('mp3-320');
   
-  // Trimming State
   const [startTime, setStartTime] = useState(0);
   const [endTime, setEndTime] = useState(0);
   
   const activeEventSource = useRef(null);
+  const playerRef = useRef(null); // Ref for YouTube player
   
-  // Download progress states
   const [downloadState, setDownloadState] = useState('idle');
   const [downloadPercent, setDownloadPercent] = useState(0);
   const [downloadSpeed, setDownloadSpeed] = useState('');
   const [downloadEta, setDownloadEta] = useState('');
   const [downloadMsg, setDownloadMsg] = useState('');
+
+  // Sync Slider to Video Preview
+  const handleSeek = (time) => {
+    if (playerRef.current) {
+      playerRef.current.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'seekTo', args: [time, true] }),
+        '*'
+      );
+    }
+  };
+
+  useEffect(() => {
+    setError('');
+    if (downloadState === 'completed' || downloadState === 'error') {
+      setDownloadState('idle');
+      setDownloadMsg('');
+      setDownloadPercent(0);
+    }
+  }, [format]);
 
   // Playlist states
   const [selectedItemIds, setSelectedItemIds] = useState({});
@@ -379,16 +397,24 @@ function App() {
                 </div>
               </div>
             ) : (
-              <div className="preview-card">
-                <div className="thumbnail-container">
-                  <img src={metadata.thumbnail} alt="Preview" className="thumbnail-img" />
-                  <span className="duration-tag">{formatDuration(metadata.duration)}</span>
+              <div className="preview-card-pro">
+                <div className="video-player-container">
+                  <iframe
+                    ref={playerRef}
+                    className="preview-player"
+                    src={`https://www.youtube.com/embed/${metadata.id}?enablejsapi=1&rel=0&modestbranding=1`}
+                    title="YouTube video player"
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  ></iframe>
                 </div>
                 
                 <div className="video-info-content">
                   <div style={{ minWidth: 0 }}>
                     <h3 className="video-title" title={metadata.title}>{metadata.title}</h3>
                     <div className="video-channel">{metadata.channel}</div>
+                    
                     <div className="video-meta-row">
                       <span>{formatViews(metadata.viewCount)} views</span>
                       <span>•</span>
@@ -399,30 +425,60 @@ function App() {
                         disabled={isDownloading}
                       >
                         <option value="mp3-320">MP3 320kbps</option>
+                        <option value="wav">WAV Studio</option>
                         <option value="4k">MP4 4K</option>
                         <option value="1080p">MP4 1080p</option>
                         <option value="720p">MP4 720p</option>
                       </select>
                     </div>
 
-                    {/* Trim Selector */}
+                    {/* Pro Trim Selector with Visual Spectrum */}
                     {!isDownloading && downloadState === 'idle' && (
-                      <div className="trim-section">
+                      <div className="trim-section-pro">
                         <div className="trim-header">
-                          <span>Clip Selection: {formatDuration(startTime)} - {formatDuration(endTime)}</span>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M6 3v12"/><path d="M18 9v12"/><path d="M2 12h20"/><path d="M6 12v6a2 2 0 0 0 2 2h12"/>
+                          </svg>
+                          <span>Studio Cut: {formatDuration(startTime)} - {formatDuration(endTime)}</span>
                         </div>
-                        <div className="range-container">
-                          <input 
-                            type="range" min="0" max={metadata.duration} value={startTime} 
-                            onChange={(e) => setStartTime(Math.min(Number(e.target.value), endTime - 1))}
-                            className="range-input"
-                          />
-                          <input 
-                            type="range" min="0" max={metadata.duration} value={endTime} 
-                            onChange={(e) => setEndTime(Math.max(Number(e.target.value), startTime + 1))}
-                            className="range-input"
-                          />
+                        
+                        <div className="spectrum-container">
+                          {/* Visual Waveform Placeholder */}
+                          <div className="waveform-bg">
+                            {[...Array(60)].map((_, i) => (
+                              <div 
+                                key={i} 
+                                className="wave-bar" 
+                                style={{ 
+                                  height: `${20 + Math.random() * 80}%`,
+                                  opacity: (i / 60) * metadata.duration >= startTime && (i / 60) * metadata.duration <= endTime ? 1 : 0.2
+                                }}
+                              ></div>
+                            ))}
+                          </div>
+                          
+                          <div className="range-container">
+                            <input 
+                              type="range" min="0" max={metadata.duration} value={startTime} 
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setStartTime(Math.min(val, endTime - 1));
+                                handleSeek(val);
+                              }}
+                              className="range-input start-handle"
+                            />
+                            <input 
+                              type="range" min="0" max={metadata.duration} value={endTime} 
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setEndTime(Math.max(val, startTime + 1));
+                                handleSeek(val);
+                              }}
+                              className="range-input end-handle"
+                            />
+                          </div>
                         </div>
+                        <div className="trim-hint">Drag handles to trim. Only the selected range will be downloaded.</div>
                       </div>
                     )}
                   </div>
