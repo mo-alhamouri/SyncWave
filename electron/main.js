@@ -19,13 +19,17 @@ let currentDownloadProcess = null;
 
 // Directories setup
 const userDataPath = app.getPath('userData');
-const downloadsDir = app.getPath('downloads'); // Direct to Downloads folder
+const finalDownloadsDir = app.getPath('downloads');
+const tempDownloadsDir = path.join(userDataPath, 'temp_downloads');
 const binDir = path.join(userDataPath, 'bin');
 const ytDlpPath = path.join(binDir, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
 const cookiesPath = path.join(userDataPath, 'cookies.txt');
 
 if (!fs.existsSync(binDir)) {
     fs.mkdirSync(binDir, { recursive: true });
+}
+if (!fs.existsSync(tempDownloadsDir)) {
+    fs.mkdirSync(tempDownloadsDir, { recursive: true });
 }
 
 const https = require('https');
@@ -153,7 +157,6 @@ ipcMain.handle('get-info', async (event, videoUrl) => {
     try {
         console.log(`[INFO] Analyzing: ${targetUrl}`);
         
-        // 1. PHASE 1: Always check for playlist first
         let rawResult = await ytDlpWrap.getVideoInfo([
             targetUrl, 
             '--flat-playlist', 
@@ -163,7 +166,6 @@ ipcMain.handle('get-info', async (event, videoUrl) => {
             '--js-runtime', 'node'
         ]);
         
-        // Fix for yt-dlp-wrap returning multiple JSON objects (e.g. version info)
         let metadata = Array.isArray(rawResult) 
             ? rawResult.find(o => o && o.id && (o.title || o.fulltitle) && o._version === undefined) 
             : rawResult;
@@ -172,8 +174,6 @@ ipcMain.handle('get-info', async (event, videoUrl) => {
             metadata = Array.isArray(rawResult) ? rawResult[0] : rawResult;
         }
 
-        // 2. DETECT TYPE (Strict detection to avoid duplication)
-        // Only treat as playlist if explicit type is 'playlist' or it has multiple real entries
         const isPlaylist = (metadata && metadata._type === 'playlist') || 
                            (metadata && Array.isArray(metadata.entries) && metadata.entries.length > 1);
 
@@ -198,7 +198,6 @@ ipcMain.handle('get-info', async (event, videoUrl) => {
             };
         }
 
-        // 3. SINGLE VIDEO PROCESSING
         console.log("[INFO] Running High-Quality Analysis...");
         let deepRaw = await ytDlpWrap.getVideoInfo([
             targetUrl,
@@ -235,41 +234,36 @@ ipcMain.handle('get-info', async (event, videoUrl) => {
 ipcMain.on('start-download', (event, url, format) => {
     if (!ytDlpWrap) return;
 
-    // Use a safer template for filenames to prevent shell issues
-    // Restrict characters to common ones for maximum compatibility
-    const outputPath = path.join(downloadsDir, '%(title).200s.%(ext)s');
+    // We download to a TEMP folder first to hide messy .part files from the user
+    // We use the exact title for the final filename later
+    const tempOutputPath = path.join(tempDownloadsDir, '%(title)s.%(ext)s');
     
     let ytDlpArgs = [
         url, 
         ...getCommonFlags(), 
         '--ffmpeg-location', ffmpeg.path, 
-        '-o', outputPath,
+        '-o', tempOutputPath,
         '--newline',
-        '--restrict-filenames', // Avoid special character issues in filenames
-        '--force-overwrites',    // Ensure we don't get stuck on existing files
+        '--force-overwrites'
     ];
 
     console.log(`[DOWNLOAD] Target URL: ${url}`);
     
     // Pro Quality Formats Mapping
-    // We favor mp4-compatible streams (h264/aac) for standard HD to avoid merge errors.
-    // For 4K/UHD, we allow the best streams but force remux to mp4.
     if (format === 'mp3' || format === 'mp3-320') {
         ytDlpArgs.push('-x', '--audio-format', 'mp3', '--audio-quality', '0'); 
-    } else if (format === 'flac') {
-        ytDlpArgs.push('-x', '--audio-format', 'flac');
     } else if (format === 'wav') {
         ytDlpArgs.push('-x', '--audio-format', 'wav');
     } else if (format === 'aac') {
         ytDlpArgs.push('-x', '--audio-format', 'm4a');
     } else if (format === '4k') {
-        ytDlpArgs.push('-f', 'bestvideo[height<=2160]+bestaudio/best[height<=2160]', '--merge-output-format', 'mp4');
+        // Force recode to MP4 to avoid merge errors on 4K streams
+        ytDlpArgs.push('-f', 'bestvideo[height<=2160]+bestaudio/best[height<=2160]', '--recode-video', 'mp4');
     } else if (format === 'webm-4k') {
         ytDlpArgs.push('-f', 'bestvideo[ext=webm][height<=2160]+bestaudio[ext=webm]/best[ext=webm]');
     } else if (format === '1440p') {
-        ytDlpArgs.push('-f', 'bestvideo[height<=1440]+bestaudio/best[height<=1440]', '--merge-output-format', 'mp4');
+        ytDlpArgs.push('-f', 'bestvideo[height<=1440]+bestaudio/best[height<=1440]', '--recode-video', 'mp4');
     } else if (format === '1080p') {
-        // For 1080p and 720p, we prefer h264 for maximum MP4 compatibility
         ytDlpArgs.push('-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]/best', '--merge-output-format', 'mp4');
     } else if (format === '720p') {
         ytDlpArgs.push('-f', 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]/best', '--merge-output-format', 'mp4');
@@ -280,6 +274,8 @@ ipcMain.on('start-download', (event, url, format) => {
     try {
         console.log(`[EXEC] yt-dlp ${ytDlpArgs.join(' ')}`);
         currentDownloadProcess = ytDlpWrap.exec(ytDlpArgs);
+
+        let lastFilePath = null;
 
         currentDownloadProcess.on('progress', (progress) => {
             mainWindow.webContents.send('download-progress', {
@@ -293,8 +289,18 @@ ipcMain.on('start-download', (event, url, format) => {
         currentDownloadProcess.on('ytDlpEvent', (event, data) => {
             console.log(`[YT-DLP] ${data}`);
             
-            // Only trigger processing message for actual finalize/merge events
-            if (data.includes('Extracting audio') || data.includes('Merging formats') || data.includes('Deleting original file')) {
+            // Capture the final filename from yt-dlp logs
+            if (data.includes('[download] Destination:') || data.includes('[VideoConvertor] Converting video to')) {
+                const parts = data.split(': ');
+                if (parts.length > 1) {
+                    lastFilePath = parts[1].trim();
+                }
+            } else if (data.includes('Merging formats into')) {
+                const match = data.match(/into "(.+)"/);
+                if (match) lastFilePath = match[1];
+            }
+
+            if (data.includes('Extracting audio') || data.includes('Merging formats') || data.includes('Deleting original file') || data.includes('Converting video')) {
                 mainWindow.webContents.send('download-progress', { 
                     status: 'processing', 
                     message: 'Finalizing & Encoding High-Quality File...' 
@@ -303,12 +309,25 @@ ipcMain.on('start-download', (event, url, format) => {
         });
 
         currentDownloadProcess.on('close', (code) => {
-            if (code === 0) {
-                console.log(`[SUCCESS] Download completed: ${url}`);
-                mainWindow.webContents.send('download-completed', { message: 'Download Complete! Saved to your Downloads folder' });
-            } else {
-                console.error(`[ERROR] Process exited with code ${code}`);
-                mainWindow.webContents.send('download-error', { error: `Download engine stopped with code ${code}. Check your connection.` });
+            if (code === 0 && lastFilePath) {
+                try {
+                    const fileName = path.basename(lastFilePath);
+                    const destPath = path.join(finalDownloadsDir, fileName);
+                    
+                    // Move the finished file from TEMP to real DOWNLOADS
+                    if (fs.existsSync(lastFilePath)) {
+                        fs.renameSync(lastFilePath, destPath);
+                        console.log(`[SUCCESS] File moved to: ${destPath}`);
+                        mainWindow.webContents.send('download-completed', { message: 'Download Complete! Saved to your Downloads folder' });
+                    } else {
+                        throw new Error('Final file not found on disk');
+                    }
+                } catch (moveError) {
+                    console.error('[ERROR] Failed to move file:', moveError);
+                    mainWindow.webContents.send('download-error', { error: 'Download finished but failed to save to folder. Check permissions.' });
+                }
+            } else if (code !== 0) {
+                mainWindow.webContents.send('download-error', { error: `Download engine stopped with code ${code}.` });
             }
             currentDownloadProcess = null;
         });
@@ -332,5 +351,5 @@ ipcMain.on('stop-download', () => {
 });
 
 ipcMain.on('open-downloads-folder', () => {
-    shell.openPath(downloadsDir);
+    shell.openPath(finalDownloadsDir);
 });
