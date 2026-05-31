@@ -431,9 +431,9 @@ body {
 }
 
 .video-player-container {
-  width: 100%; /* Increased back to full width for 50% relative growth from 75% */
+  width: 100%;
   margin: 0 auto;
-  aspect_ratio: 16/9;
+  aspect_ratio: 16 / 13.5; /* Height increased by 50% from 16/9 */
   border-radius: 20px;
   overflow: hidden;
   background: #000;
