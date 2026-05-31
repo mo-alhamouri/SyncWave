@@ -305,6 +305,7 @@ ipcMain.on('start-download', (event, url, format, startTime, endTime) => {
             return `${h}:${m}:${s}`;
         };
         ytDlpArgs.push('--download-sections', `*${formatTime(startTime)}-${formatTime(endTime)}`);
+        ytDlpArgs.push('--force-keyframes-at-cuts');
     }
 
     if (format.includes('mp3')) {

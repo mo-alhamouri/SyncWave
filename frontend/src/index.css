@@ -436,7 +436,7 @@ body {
 .video-player-container {
   width: 100%;
   margin: 0 auto;
-  aspect_ratio: 16/9; /* Restored original aspect ratio */
+  height: 450px; /* Set fixed height to 450px as requested */
   border-radius: 20px;
   overflow: hidden;
   background: #000;
