@@ -269,10 +269,25 @@ function App() {
                     </select>
                   </div>
 
-                  {/* Wide Spectrum Trim Selector - Replicating Design */}
+                  {/* Wide Spectrum Trim Selector - Studio Mode */}
                   {!isDownloading && downloadState === 'idle' && (
                     <div className="trim-section-pro-wide">
-                      <div className="filename-label-top">{metadata.title}.mp3</div>
+                      <div className="trim-header-studio">
+                        <div className="studio-badge">STUDIO CUT MODE</div>
+                        <div className="trim-time-display">
+                          <span>{formatDuration(startTime)}</span>
+                          <span className="time-divider">/</span>
+                          <span>{formatDuration(endTime)}</span>
+                        </div>
+                        <button onClick={togglePlay} className="studio-play-btn">
+                          {isPlaying ? (
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                          ) : (
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                          )}
+                          {isPlaying ? 'Pause' : 'Play Clip'}
+                        </button>
+                      </div>
                       
                       <div className="spectrum-container-wide">
                         <div className="waveform-bg">
@@ -283,7 +298,7 @@ function App() {
                                 key={i} 
                                 className={`wave-bar ${isSelected ? 'active' : ''}`} 
                                 style={{ 
-                                  height: waveform.length > 0 ? `${20 + val * 80}%` : `${30 + Math.random() * 40}%`
+                                  height: waveform.length > 0 ? `${15 + val * 85}%` : `${20 + Math.random() * 40}%`
                                 }}
                               ></div>
                             );
@@ -293,12 +308,11 @@ function App() {
                         <div className="range-container-studio">
                           <div className="selection-overlay" style={{ 
                             left: `${(startTime / metadata.duration) * 100}%`,
-                            width: `${((endTime - startTime) / metadata.duration) * 100}%`
+                            right: `${100 - (endTime / metadata.duration) * 100}%`
                           }}></div>
                           
-                          {/* Start Handle */}
-                          <div className="handle-container" style={{ left: `calc(${(startTime / metadata.duration) * 100}% - 6px)` }}>
-                            <div className="handle-label-pro start-label">{formatDuration(startTime)}</div>
+                          <div className="handle-container" style={{ left: `${(startTime / metadata.duration) * 100}%` }}>
+                            <div className="handle-label top">START</div>
                             <input 
                               type="range" min="0" max={metadata.duration} value={startTime} 
                               onChange={(e) => {
@@ -306,13 +320,13 @@ function App() {
                                 setStartTime(Math.min(val, endTime - 1));
                                 handleSeek(val);
                               }}
-                              className="range-input-pro"
+                              className="range-input start-handle"
                             />
+                            <div className="handle-label bottom">{formatDuration(startTime)}</div>
                           </div>
 
-                          {/* End Handle */}
-                          <div className="handle-container" style={{ left: `calc(${(endTime / metadata.duration) * 100}% - 6px)` }}>
-                            <div className="handle-label-pro end-label">{formatDuration(endTime)}</div>
+                          <div className="handle-container" style={{ left: `${(endTime / metadata.duration) * 100}%` }}>
+                            <div className="handle-label top">END</div>
                             <input 
                               type="range" min="0" max={metadata.duration} value={endTime} 
                               onChange={(e) => {
@@ -320,26 +334,14 @@ function App() {
                                 setEndTime(Math.max(val, startTime + 1));
                                 handleSeek(val);
                               }}
-                              className="range-input-pro"
+                              className="range-input end-handle"
                             />
+                            <div className="handle-label bottom">{formatDuration(endTime)}</div>
                           </div>
                         </div>
-
-                        <div className="duration-label-center">{formatDuration(endTime - startTime)}</div>
                       </div>
-
-                      <div className="trim-header-studio">
-                        <button onClick={togglePlay} className="studio-play-btn">
-                          {isPlaying ? (
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
-                          ) : (
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                          )}
-                          {isPlaying ? 'Pause' : 'Preview Selection'}
-                        </button>
-                        <div className="trim-footer">
-                          <span>Length: {formatDuration(endTime - startTime)}</span>
-                        </div>
+                      <div className="trim-footer">
+                        <span>Tip: Drag handles to select the perfect part. Length: {formatDuration(endTime - startTime)}</span>
                       </div>
                     </div>
                   )}

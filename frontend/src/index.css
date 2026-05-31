@@ -268,24 +268,58 @@ body {
   grid-column: 1 / -1; /* Make it full width */
 }
 
-/* Professional Studio Cutter - Replicating Screenshot */
-.trim-section-pro-wide {
-  margin-top: 2rem;
-  background: #0d1b3e; /* Deep navy from screenshot */
-  padding: 3rem 1.5rem;
-  border-radius: 4px;
-  position: relative;
-  grid-column: 1 / -1;
-  border: 1px solid rgba(255,255,255,0.05);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+/* Studio Cutter UI - Mirroring mp3cut.net */
+.trim-header-studio {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2rem;
 }
+
+.studio-badge {
+  background: var(--secondary-color);
+  color: black;
+  font-size: 0.7rem;
+  font-weight: 900;
+  padding: 4px 10px;
+  border-radius: 4px;
+  letter-spacing: 1px;
+}
+
+.trim-time-display {
+  display: flex;
+  gap: 1rem;
+  font-family: var(--font-title);
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.time-divider { color: var(--text-muted); opacity: 0.5; }
+
+.studio-play-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--panel-border);
+  color: white;
+  padding: 0.6rem 1.2rem;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.studio-play-btn:hover { background: rgba(255, 255, 255, 0.1); border-color: var(--secondary-color); }
 
 .spectrum-container-wide {
   position: relative;
-  height: 160px; /* Taller as in screenshot */
-  background: transparent;
-  display: flex;
-  align-items: center;
+  height: 120px;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 16px;
+  margin-bottom: 2.5rem;
+  border: 1px solid var(--panel-border);
   overflow: visible;
 }
 
@@ -294,109 +328,84 @@ body {
   align-items: center;
   justify-content: space-between;
   height: 100%;
-  width: 100%;
-  padding: 0;
-  gap: 1px;
+  padding: 0 10px;
+  gap: 2px;
 }
 
 .wave-bar {
   flex: 1;
-  background: rgba(0, 255, 162, 0.2); /* Dimmed neon cyan */
-  height: 2px;
-  min-height: 2px;
-  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  transition: all 0.3s ease;
 }
 
 .wave-bar.active {
-  background: #00ffa2; /* Vibrant neon cyan from screenshot */
-  opacity: 1;
+  background: var(--primary-gradient);
+  box-shadow: 0 0 10px rgba(6, 182, 212, 0.3);
+}
+
+.range-container-studio {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .selection-overlay {
   position: absolute;
   top: 0;
   height: 100%;
-  background: rgba(0, 255, 162, 0.08); /* Lighter selection area */
+  background: rgba(6, 182, 212, 0.08);
+  border-left: 2px solid var(--secondary-color);
+  border-right: 2px solid var(--secondary-color);
   pointer-events: none;
-  border-top: 1px solid rgba(0, 255, 162, 0.2);
-  border-bottom: 1px solid rgba(0, 255, 162, 0.2);
+  box-sizing: border-box;
 }
 
 .handle-container {
   position: absolute;
   top: 0;
   height: 100%;
-  width: 12px; /* Thick handles from screenshot */
-  background: #00e5ff; /* Cyan handle color */
-  z-index: 30;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 0 15px rgba(0, 229, 255, 0.3);
+  width: 0;
+  z-index: 20;
 }
 
-/* Three dots in the handle center */
-.handle-container::after {
-  content: '...';
-  color: #0d1b3e;
-  font-weight: 900;
-  transform: rotate(90deg);
-  letter-spacing: 1px;
-  font-size: 14px;
-}
-
-.handle-label-pro {
+.handle-label {
   position: absolute;
-  white-space: nowrap;
-  font-weight: 600;
-  font-size: 0.75rem;
-  letter-spacing: 0.5px;
-}
-
-.start-label {
-  top: -30px;
-  left: 0;
-  background: white;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--secondary-color);
   color: black;
-  padding: 2px 8px;
-  border-radius: 12px; /* Pill shape */
-  font-size: 0.7rem;
+  font-size: 0.65rem;
+  font-weight: 900;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
 }
 
-.end-label {
-  bottom: -30px;
-  right: 0;
-  color: #00e5ff;
-}
+.handle-label.top { top: -25px; }
+.handle-label.bottom { bottom: -25px; background: rgba(255,255,255,0.1); color: white; border: 1px solid var(--panel-border); }
 
-.duration-label-center {
+.range-input {
   position: absolute;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: rgba(255, 255, 255, 0.4);
-  font-size: 0.7rem;
-  font-weight: 600;
-}
-
-.filename-label-top {
-  position: absolute;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: rgba(0, 229, 255, 0.5);
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-}
-
-.range-input-pro {
-  position: absolute;
-  width: 40px;
+  top: 0;
+  left: -20px;
+  width: 40px !important;
   height: 100%;
-  opacity: 0;
+  pointer-events: auto;
+  appearance: none;
+  background: none;
+  outline: none;
+}
+
+.range-input::-webkit-slider-thumb {
+  appearance: none;
+  height: 120px;
+  width: 4px;
+  background: white;
   cursor: ew-resize;
-  z-index: 40;
+  box-shadow: 0 0 15px rgba(255,255,255,0.8);
 }
 
 .trim-footer {
