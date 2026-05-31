@@ -256,28 +256,35 @@ ipcMain.handle('get-waveform', async (event, videoUrl) => {
             '-filter:a', 'aresample=8000',
             '-f', 's16le',
             '-acodec', 'pcm_s16le',
-            '-t', '600', // Limit to 10 mins for speed
+            // '-t', '600',  // REMOVED LIMIT: Now scans the entire file length
             'pipe:1'
         ]);
 
         return new Promise((resolve) => {
             let samples = [];
             ff.stdout.on('data', (chunk) => {
-                for (let i = 0; i < chunk.length; i += 4000) { // High skip for extreme speed
+                // Adjust skip based on data volume (adaptive for long files)
+                const skip = samples.length > 50000 ? 10000 : 4000;
+                for (let i = 0; i < chunk.length; i += skip) {
                     if (i + 1 < chunk.length) {
                       samples.push(Math.abs(chunk.readInt16LE(i)) / 32768);
                     }
                 }
             });
             ff.on('close', () => {
-                // Normalize to 100 points
+                // Normalize to exactly 100 points representing the WHOLE file
                 const step = Math.max(1, Math.floor(samples.length / 100));
                 const points = [];
-                for(let i=0; i<samples.length && points.length < 100; i+=step) points.push(samples[i]);
+                for(let i=0; i<samples.length && points.length < 100; i+=step) {
+                    points.push(samples[i]);
+                }
+                // If we have fewer than 100 points (very short video), pad it
+                while(points.length < 100) points.push(0);
+                
                 resolve(points);
             });
-            // Safety timeout
-            setTimeout(() => { ff.kill(); resolve([]); }, 10000);
+            // Slightly longer safety timeout for long videos
+            setTimeout(() => { ff.kill(); resolve([]); }, 15000);
         });
     } catch (e) {
         console.error('[WAVEFORM] Failed:', e.message);
