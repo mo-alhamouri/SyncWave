@@ -431,8 +431,9 @@ body {
 }
 
 .video-player-container {
-  width: 100%;
-  aspect-ratio: 16/9;
+  width: 75%; /* Reduced by 25% */
+  margin: 0 auto; /* Center the smaller player */
+  aspect_ratio: 16/9;
   border-radius: 20px;
   overflow: hidden;
   background: #000;

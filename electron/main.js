@@ -303,7 +303,8 @@ ipcMain.on('start-download', (event, url, format, startTime, endTime) => {
         '--ffmpeg-location', ffmpeg.path, 
         '-o', tempOutputPath,
         '--newline',
-        '--force-overwrites'
+        '--force-overwrites',
+        '--no-keep-video' // Ensure temp video is deleted after MP3 conversion
     ];
 
     // Trimming
