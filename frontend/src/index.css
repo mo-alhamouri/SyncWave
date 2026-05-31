@@ -268,14 +268,152 @@ body {
   grid-column: 1 / -1; /* Make it full width */
 }
 
+/* Studio Cutter UI - Mirroring mp3cut.net */
+.trim-header-studio {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+}
+
+.studio-badge {
+  background: var(--secondary-color);
+  color: black;
+  font-size: 0.7rem;
+  font-weight: 900;
+  padding: 4px 10px;
+  border-radius: 4px;
+  letter-spacing: 1px;
+}
+
+.trim-time-display {
+  display: flex;
+  gap: 1rem;
+  font-family: var(--font-title);
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.time-divider { color: var(--text-muted); opacity: 0.5; }
+
+.studio-play-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--panel-border);
+  color: white;
+  padding: 0.6rem 1.2rem;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.studio-play-btn:hover { background: rgba(255, 255, 255, 0.1); border-color: var(--secondary-color); }
+
 .spectrum-container-wide {
   position: relative;
-  height: 80px; /* Taller for better precision */
-  background: rgba(0, 0, 0, 0.4);
-  border-radius: 12px;
-  overflow: hidden;
-  margin-bottom: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  height: 120px;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 16px;
+  margin-bottom: 2.5rem;
+  border: 1px solid var(--panel-border);
+  overflow: visible;
+}
+
+.waveform-bg {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 100%;
+  padding: 0 10px;
+  gap: 2px;
+}
+
+.wave-bar {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+
+.wave-bar.active {
+  background: var(--primary-gradient);
+  box-shadow: 0 0 10px rgba(6, 182, 212, 0.3);
+}
+
+.range-container-studio {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.selection-overlay {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: rgba(6, 182, 212, 0.08);
+  border-left: 2px solid var(--secondary-color);
+  border-right: 2px solid var(--secondary-color);
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+.handle-container {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 0;
+  z-index: 20;
+}
+
+.handle-label {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--secondary-color);
+  color: black;
+  font-size: 0.65rem;
+  font-weight: 900;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.handle-label.top { top: -25px; }
+.handle-label.bottom { bottom: -25px; background: rgba(255,255,255,0.1); color: white; border: 1px solid var(--panel-border); }
+
+.range-input {
+  position: absolute;
+  top: 0;
+  left: -20px;
+  width: 40px !important;
+  height: 100%;
+  pointer-events: auto;
+  appearance: none;
+  background: none;
+  outline: none;
+}
+
+.range-input::-webkit-slider-thumb {
+  appearance: none;
+  height: 120px;
+  width: 4px;
+  background: white;
+  cursor: ew-resize;
+  box-shadow: 0 0 15px rgba(255,255,255,0.8);
+}
+
+.trim-footer {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.5px;
 }
 
 .preview-card-pro {

@@ -44,6 +44,7 @@ function App() {
   const [downloadSpeed, setDownloadSpeed] = useState('');
   const [downloadEta, setDownloadEta] = useState('');
   const [downloadMsg, setDownloadMsg] = useState('');
+  const [isPlaying, setIsPlaying] = useState(false);
 
   // Sync Slider to Video Preview
   const handleSeek = (time) => {
@@ -54,6 +55,29 @@ function App() {
       );
     }
   };
+
+  const togglePlay = () => {
+    if (playerRef.current) {
+      const command = isPlaying ? 'pauseVideo' : 'playVideo';
+      if (!isPlaying) handleSeek(startTime); // Start from the beginning of the trim
+      playerRef.current.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: command, args: [] }),
+        '*'
+      );
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  // Monitor playback to stay within bounds
+  useEffect(() => {
+    if (isPlaying && playerRef.current) {
+      const interval = setInterval(() => {
+        // We can't easily get current time from iframe without complex postMessage listeners,
+        // so we'll rely on the user for now or keep it simple.
+      }, 500);
+      return () => clearInterval(interval);
+    }
+  }, [isPlaying, endTime]);
 
   // RESET UI IF FORMAT CHANGES
   useEffect(() => {
@@ -245,47 +269,79 @@ function App() {
                     </select>
                   </div>
 
-                  {/* Wide Spectrum Trim Selector */}
+                  {/* Wide Spectrum Trim Selector - Studio Mode */}
                   {!isDownloading && downloadState === 'idle' && (
                     <div className="trim-section-pro-wide">
-                      <div className="trim-header">
-                        <span>Studio Cut: {formatDuration(startTime)} - {formatDuration(endTime)}</span>
+                      <div className="trim-header-studio">
+                        <div className="studio-badge">STUDIO CUT MODE</div>
+                        <div className="trim-time-display">
+                          <span>{formatDuration(startTime)}</span>
+                          <span className="time-divider">/</span>
+                          <span>{formatDuration(endTime)}</span>
+                        </div>
+                        <button onClick={togglePlay} className="studio-play-btn">
+                          {isPlaying ? (
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                          ) : (
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                          )}
+                          {isPlaying ? 'Pause' : 'Play Clip'}
+                        </button>
                       </div>
                       
                       <div className="spectrum-container-wide">
                         <div className="waveform-bg">
-                          {(waveform.length > 0 ? waveform : [...Array(100)]).map((val, i) => (
-                            <div 
-                              key={i} 
-                              className="wave-bar" 
-                              style={{ 
-                                height: waveform.length > 0 ? `${10 + val * 90}%` : `${20 + Math.random() * 40}%`,
-                                opacity: (i / 100) * metadata.duration >= startTime && (i / 100) * metadata.duration <= endTime ? 1 : 0.25
-                              }}
-                            ></div>
-                          ))}
+                          {(waveform.length > 0 ? waveform : [...Array(100)]).map((val, i) => {
+                            const isSelected = (i / 100) * metadata.duration >= startTime && (i / 100) * metadata.duration <= endTime;
+                            return (
+                              <div 
+                                key={i} 
+                                className={`wave-bar ${isSelected ? 'active' : ''}`} 
+                                style={{ 
+                                  height: waveform.length > 0 ? `${15 + val * 85}%` : `${20 + Math.random() * 40}%`
+                                }}
+                              ></div>
+                            );
+                          })}
                         </div>
                         
-                        <div className="range-container">
-                          <input 
-                            type="range" min="0" max={metadata.duration} value={startTime} 
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              setStartTime(Math.min(val, endTime - 1));
-                              handleSeek(val);
-                            }}
-                            className="range-input start-handle"
-                          />
-                          <input 
-                            type="range" min="0" max={metadata.duration} value={endTime} 
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              setEndTime(Math.max(val, startTime + 1));
-                              handleSeek(val);
-                            }}
-                            className="range-input end-handle"
-                          />
+                        <div className="range-container-studio">
+                          <div className="selection-overlay" style={{ 
+                            left: `${(startTime / metadata.duration) * 100}%`,
+                            right: `${100 - (endTime / metadata.duration) * 100}%`
+                          }}></div>
+                          
+                          <div className="handle-container" style={{ left: `${(startTime / metadata.duration) * 100}%` }}>
+                            <div className="handle-label top">START</div>
+                            <input 
+                              type="range" min="0" max={metadata.duration} value={startTime} 
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setStartTime(Math.min(val, endTime - 1));
+                                handleSeek(val);
+                              }}
+                              className="range-input start-handle"
+                            />
+                            <div className="handle-label bottom">{formatDuration(startTime)}</div>
+                          </div>
+
+                          <div className="handle-container" style={{ left: `${(endTime / metadata.duration) * 100}%` }}>
+                            <div className="handle-label top">END</div>
+                            <input 
+                              type="range" min="0" max={metadata.duration} value={endTime} 
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setEndTime(Math.max(val, startTime + 1));
+                                handleSeek(val);
+                              }}
+                              className="range-input end-handle"
+                            />
+                            <div className="handle-label bottom">{formatDuration(endTime)}</div>
+                          </div>
                         </div>
+                      </div>
+                      <div className="trim-footer">
+                        <span>Tip: Drag handles to select the perfect part. Length: {formatDuration(endTime - startTime)}</span>
                       </div>
                     </div>
                   )}
