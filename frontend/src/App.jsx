@@ -31,13 +31,16 @@ function App() {
   const [error, setError] = useState('');
   const [format, setFormat] = useState('mp3-320');
   
+  // Refs
+  const activeEventSource = useRef(null);
+  const playerRef = useRef(null);
+  const inputRef = useRef(null); // Added for auto-focus
+  const spectrumRef = useRef(null);
+  
   // Trimming State
   const [startTime, setStartTime] = useState(0);
   const [endTime, setEndTime] = useState(0);
   const [waveform, setWaveform] = useState([]);
-  
-  const activeEventSource = useRef(null);
-  const playerRef = useRef(null);
   
   const [downloadState, setDownloadState] = useState('idle');
   const [downloadPercent, setDownloadPercent] = useState(0);
@@ -46,8 +49,20 @@ function App() {
   const [downloadMsg, setDownloadMsg] = useState('');
   const [isPlaying, setIsPlaying] = useState(false);
   const [dragging, setDragging] = useState(null); // 'start', 'end', or null
-  
-  const spectrumRef = useRef(null);
+
+  // Auto-focus and Badge Clearing
+  useEffect(() => {
+    if (inputRef.current) inputRef.current.focus();
+    
+    const handleFocus = () => {
+      if (window.electron && window.electron.clearBadge) {
+        window.electron.clearBadge();
+      }
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
 
   // Sync Slider to Video Preview
   const handleSeek = (time) => {
@@ -253,6 +268,7 @@ function App() {
         <form onSubmit={handleAnalyze} className="url-form">
           <div className="input-group">
             <input
+              ref={inputRef}
               type="text"
               placeholder="Paste YouTube link..."
               value={url}

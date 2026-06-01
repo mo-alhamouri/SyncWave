@@ -306,17 +306,20 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
         '--force-overwrites',
         '--no-keep-video'
     ];
+// Trimming - Professional Grade Sync
+if (startTime !== undefined && endTime !== undefined) {
+    const formatTime = (sec) => {
+        const h = Math.floor(sec / 3600).toString().padStart(2, '0');
+        const m = Math.floor((sec % 3600) / 60).toString().padStart(2, '0');
+        const s = Math.floor(sec % 60).toString().padStart(2, '0');
+        return `${h}:${m}:${s}`;
+    };
+    // Use * for accurate seek and add post-processor args to ensure audio/video alignment
+    ytDlpArgs.push('--download-sections', `*${formatTime(startTime)}-${formatTime(endTime)}`);
+    ytDlpArgs.push('--force-keyframes-at-cuts');
+    ytDlpArgs.push('--ppa', 'ffmpeg:-shortest'); // Ensures output is capped by shortest stream
+}
 
-    if (startTime !== undefined && endTime !== undefined) {
-        const formatTime = (sec) => {
-            const h = Math.floor(sec / 3600).toString().padStart(2, '0');
-            const m = Math.floor((sec % 3600) / 60).toString().padStart(2, '0');
-            const s = Math.floor(sec % 60).toString().padStart(2, '0');
-            return `${h}:${m}:${s}`;
-        };
-        ytDlpArgs.push('--download-sections', `*${formatTime(startTime)}-${formatTime(endTime)}`);
-        ytDlpArgs.push('--force-keyframes-at-cuts');
-    }
 
     if (format.includes('mp3')) {
         ytDlpArgs.push('-x', '--audio-format', 'mp3', '--audio-quality', '0'); 
@@ -393,6 +396,13 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
                         fs.copyFileSync(lastFilePath, destPath);
                         fs.unlinkSync(lastFilePath);
                         console.log(`[SUCCESS] File saved: ${destPath}`);
+                        
+                        // Dock Notifications
+                        if (process.platform === 'darwin') {
+                            app.dock.bounce('informational');
+                            app.setBadgeCount(1);
+                        }
+                        
                         mainWindow.webContents.send('download-completed', { message: 'Download Complete! Saved to your Downloads folder' });
                     } catch (moveError) {
                         console.error('[ERROR] Save failed:', moveError);
@@ -432,4 +442,10 @@ ipcMain.on('stop-download', () => {
 
 ipcMain.on('open-downloads-folder', () => {
     shell.openPath(finalDownloadsDir);
+});
+
+ipcMain.on('clear-badge', () => {
+    if (process.platform === 'darwin') {
+        app.setBadgeCount(0);
+    }
 });

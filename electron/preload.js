@@ -35,5 +35,8 @@ contextBridge.exposeInMainWorld('electron', {
     stopDownload: () => ipcRenderer.send('stop-download'),
     
     // Open downloads folder
-    openDownloadsFolder: () => ipcRenderer.send('open-downloads-folder')
+    openDownloadsFolder: () => ipcRenderer.send('open-downloads-folder'),
+
+    // Clear dock badge
+    clearBadge: () => ipcRenderer.send('clear-badge')
 });

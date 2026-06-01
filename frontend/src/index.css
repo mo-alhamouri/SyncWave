@@ -77,14 +77,22 @@ body {
   color: white;
   font-weight: 700;
   cursor: pointer;
+  min-width: 140px; /* Locked width to prevent flickering */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-/* Fix for long titles & Layout */
-.preview-card {
-  display: grid;
-  grid-template-columns: 350px 1fr;
-  gap: 2rem;
-  margin-top: 2rem;
+.video-title {
+  font-size: 1.6rem;
+  font-family: var(--font-title);
+  margin-bottom: 0.5rem;
+  white-space: normal; /* Allow title to wrap */
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  width: 100%;
 }
 
 .thumbnail-container {
