@@ -317,9 +317,8 @@ if (startTime !== undefined && endTime !== undefined) {
     // Use * for accurate seek and add post-processor args to ensure audio/video alignment
     ytDlpArgs.push('--download-sections', `*${formatTime(startTime)}-${formatTime(endTime)}`);
     ytDlpArgs.push('--force-keyframes-at-cuts');
-    ytDlpArgs.push('--ppa', 'ffmpeg:-shortest'); // Ensures output is capped by shortest stream
+    ytDlpArgs.push('--ppa', 'ffmpeg:-async 1 -shortest'); // Critical for audio sync at end of cuts
 }
-
 
     if (format.includes('mp3')) {
         ytDlpArgs.push('-x', '--audio-format', 'mp3', '--audio-quality', '0'); 

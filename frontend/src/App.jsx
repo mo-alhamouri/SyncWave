@@ -188,6 +188,15 @@ function App() {
   const handleDownload = () => {
     if (!metadata || downloadState !== 'idle') return;
 
+    // STOP PREVIEW PLAYBACK IF ACTIVE
+    if (isPlaying && playerRef.current) {
+      playerRef.current.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }),
+        '*'
+      );
+      setIsPlaying(false);
+    }
+
     setDownloadState('started');
     setDownloadPercent(5);
     setDownloadMsg('Initializing Lightning-Fast Engine...');

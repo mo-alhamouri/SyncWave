@@ -86,13 +86,13 @@ body {
 .video-title {
   font-size: 1.6rem;
   font-family: var(--font-title);
-  margin-bottom: 0.5rem;
-  white-space: normal; /* Allow title to wrap */
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
+  margin-bottom: 0.8rem;
+  white-space: normal; /* Allow wrapping */
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  display: block; /* Ensure it behaves as a block for wrapping */
   width: 100%;
+  line-height: 1.2;
 }
 
 .thumbnail-container {
