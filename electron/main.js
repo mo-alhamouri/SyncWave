@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const isDev = require('electron-is-dev');
@@ -8,6 +8,18 @@ const fixPath = require('fix-path');
 
 // Fix the $PATH on macOS so that it can find ffmpeg if installed globally
 fixPath();
+
+// Register media protocol for local file preview
+app.whenReady().then(() => {
+    protocol.registerFileProtocol('media', (request, callback) => {
+        const url = request.url.replace('media://', '');
+        try {
+            return callback(decodeURIComponent(url));
+        } catch (error) {
+            console.error(error);
+        }
+    });
+});
 
 let YTDlpWrap = require('yt-dlp-wrap');
 if (YTDlpWrap.default) {
