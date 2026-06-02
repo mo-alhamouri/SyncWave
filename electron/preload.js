@@ -42,5 +42,9 @@ contextBridge.exposeInMainWorld('electron', {
 
     // Version & Updates
     getVersion: () => ipcRenderer.invoke('get-version'),
-    checkUpdates: () => ipcRenderer.invoke('check-for-updates')
+    checkUpdates: () => ipcRenderer.invoke('check-for-updates'),
+
+    // Local File Trimmer
+    selectFile: () => ipcRenderer.invoke('select-file'),
+    trimLocalFile: (filePath, format, startTime, endTime) => ipcRenderer.invoke('trim-local-file', filePath, format, startTime, endTime)
 });
