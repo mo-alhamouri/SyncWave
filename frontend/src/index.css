@@ -265,8 +265,30 @@ body {
   position: absolute;
   top: 0;
   height: 100%;
-  width: 0;
-  z-index: 20;
+  width: 20px; /* Wider hit-area for interaction */
+  transform: translateX(-50%);
+  z-index: 200;
+  cursor: ew-resize;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: auto; /* Ensure it catches clicks */
+}
+
+.handle-bar {
+  width: 4px;
+  height: 100%;
+  background: white;
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.8);
+  border-radius: 2px;
+  transition: transform 0.2s, background 0.2s;
+}
+
+.handle-container:hover .handle-bar,
+.handle-container.dragging .handle-bar {
+  transform: scaleX(1.5);
+  background: var(--secondary-color);
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.6);
 }
 
 .handle-label {
@@ -285,28 +307,6 @@ body {
 
 .handle-label.top { top: -25px; }
 .handle-label.bottom { bottom: -25px; background: rgba(255,255,255,0.1); color: white; border: 1px solid var(--panel-border); }
-
-.range-input-pro {
-  position: absolute;
-  top: 0;
-  left: -20px;
-  width: 40px !important;
-  height: 100%;
-  pointer-events: auto;
-  appearance: none;
-  background: none;
-  outline: none;
-  cursor: ew-resize;
-}
-
-.range-input-pro::-webkit-slider-thumb {
-  appearance: none;
-  height: 120px;
-  width: 4px;
-  background: white;
-  cursor: ew-resize;
-  box-shadow: 0 0 15px rgba(255,255,255,0.8);
-}
 
 .trim-footer {
   text-align: center;

@@ -116,6 +116,10 @@ function App() {
   useEffect(() => {
     if (!dragging) return;
 
+    // Prevent text selection while dragging
+    const originalUserSelect = document.body.style.userSelect;
+    document.body.style.userSelect = 'none';
+
     const onMouseMove = (e) => {
       if (!spectrumRef.current || !metadata) return;
       const rect = spectrumRef.current.getBoundingClientRect();
@@ -133,13 +137,17 @@ function App() {
       }
     };
 
-    const onMouseUp = () => setDragging(null);
+    const onMouseUp = () => {
+      setDragging(null);
+      document.body.style.userSelect = originalUserSelect;
+    };
 
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
     return () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
+      document.body.style.userSelect = originalUserSelect;
     };
   }, [dragging, startTime, endTime, metadata?.duration]);
 
