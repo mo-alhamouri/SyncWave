@@ -482,12 +482,15 @@ function App() {
                         <div className="video-meta-row">
                           <span>{formatViews(metadata.viewCount)} views</span>
                           <span>•</span>
-                          <select value={format} onChange={(e) => setFormat(e.target.value)} className="quality-select-inline" disabled={isDownloading}>
-                            <option value="mp3-320">MP3 320kbps</option>
-                            <option value="4k">MP4 4K</option>
-                            <option value="1080p">MP4 1080p</option>
-                            <option value="720p">MP4 720p</option>
-                          </select>
+                          <div className="format-picker-elegant">
+                            <span>Format:</span>
+                            <select value={format} onChange={(e) => setFormat(e.target.value)} className="quality-select-inline" disabled={isDownloading}>
+                              <option value="mp3-320">MP3 320kbps</option>
+                              <option value="4k">MP4 4K</option>
+                              <option value="1080p">MP4 1080p</option>
+                              <option value="720p">MP4 720p</option>
+                            </select>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -568,14 +571,18 @@ function App() {
 
                   <div className="trim-section-pro-wide">
                     <div className="trim-header-studio">
-                      <div className="studio-badge">PRECISION STUDIO CUT</div>
                       <div className="trim-time-display">
                         <span>{formatDuration(startTime)}</span>
                         <span className="time-divider">/</span>
                         <span>{formatDuration(endTime)}</span>
                       </div>
                       <button onClick={togglePlay} className="studio-play-btn">
-                        {isPlaying ? 'Pause' : 'Play Selection'}
+                        {isPlaying ? (
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                        ) : (
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                        )}
+                        {isPlaying ? 'Pause Selection' : 'Play Selection'}
                       </button>
                     </div>
 

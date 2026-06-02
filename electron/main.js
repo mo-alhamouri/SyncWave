@@ -183,7 +183,7 @@ ipcMain.handle('select-file', async () => {
 
 ipcMain.handle('trim-local-file', async (event, filePath, format, startTime, endTime) => {
     const ext = format === 'mp3' ? 'mp3' : 'mp4';
-    const fileName = `Trimmed_${path.basename(filePath, path.extname(filePath))}.${ext}`;
+    const fileName = `${path.basename(filePath, path.extname(filePath))}_TRIMMED.${ext}`;
     const destPath = path.join(finalDownloadsDir, fileName);
     
     console.log(`[TRIM] Local File: ${filePath} -> ${destPath}`);

@@ -238,9 +238,10 @@ body {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--panel-border);
   color: white;
-  padding: 0.4rem 0.8rem;
-  border-radius: 8px;
-  font-size: 0.85rem;
+  padding: 0.6rem 1rem;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 700;
   outline: none;
   cursor: pointer;
   transition: all 0.2s;
@@ -336,6 +337,41 @@ body {
 .btn-secondary-elegant:hover { background: rgba(239, 68, 68, 0.1); border-color: #ef4444; color: #fca5a5; }
 
 /* Studio UI Components */
+.trim-header-studio {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 1.5rem;
+  margin-bottom: 2.5rem;
+}
+
+.studio-play-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--panel-border);
+  color: white;
+  padding: 0.8rem 1.8rem;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  min-width: 220px; /* Equal size for Play/Pause */
+}
+
+.studio-play-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--secondary-color);
+  transform: translateY(-2px);
+  box-shadow: 0 5px 20px rgba(6, 182, 212, 0.15);
+}
+
+.studio-play-btn svg {
+  color: var(--secondary-color);
+}
+
 .spectrum-container-wide {
   position: relative;
   height: 100px;
