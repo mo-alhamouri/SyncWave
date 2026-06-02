@@ -281,22 +281,44 @@ ipcMain.handle('get-waveform', async (event, videoUrl) => {
     }
 });
 
+ipcMain.handle('get-version', () => app.getVersion());
+
+ipcMain.handle('check-for-updates', async () => {
+    try {
+        const https = require('https');
+        return new Promise((resolve) => {
+            const options = {
+                hostname: 'api.github.com',
+                path: '/repos/mo-alhamouri/youtube-downloader/releases/latest',
+                headers: { 'User-Agent': 'SyncWave-Downloader' }
+            };
+            https.get(options, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => {
+                    try {
+                        const json = JSON.parse(data);
+                        resolve({ version: json.tag_name, url: json.html_url });
+                    } catch (e) { resolve(null); }
+                });
+            }).on('error', () => resolve(null));
+        });
+    } catch (e) { return null; }
+});
+
 ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
     if (!ytDlpWrap) {
         mainWindow.webContents.send('download-error', { error: 'Engine not initialized. Please restart the app.' });
         return;
     }
 
-    // Double check binary exists and is executable
-    if (!fs.existsSync(ytDlpPath)) {
-        await initYtdlp();
-    }
-    if (process.platform !== 'win32') {
-        try { fs.chmodSync(ytDlpPath, '755'); } catch (e) {}
+    // Reset process state to prevent hangs
+    if (currentDownloadProcess) {
+        try { currentDownloadProcess.ytDlpProcess.kill(); } catch (e) {}
     }
 
     const tempOutputPath = path.join(tempDownloadsDir, '%(title)s.%(ext)s');
-    
+
     let ytDlpArgs = [
         url, 
         ...getCommonFlags(), 
@@ -306,20 +328,23 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
         '--force-overwrites',
         '--no-keep-video'
     ];
-// Trimming - Professional Grade Sync
-if (startTime !== undefined && endTime !== undefined) {
-    const formatTime = (sec) => {
-        const h = Math.floor(sec / 3600).toString().padStart(2, '0');
-        const m = Math.floor((sec % 3600) / 60).toString().padStart(2, '0');
-        const s = Math.floor(sec % 60).toString().padStart(2, '0');
-        return `${h}:${m}:${s}`;
-    };
-    // Use * for accurate seek and add post-processor args to ensure audio/video alignment
-    ytDlpArgs.push('--download-sections', `*${formatTime(startTime)}-${formatTime(endTime)}`);
-    ytDlpArgs.push('--force-keyframes-at-cuts');
-    ytDlpArgs.push('--ppa', 'ffmpeg:-async 1 -shortest'); // Critical for audio sync at end of cuts
-}
 
+    // Trimming - DEEP SYNC FIX
+    if (startTime !== undefined && endTime !== undefined) {
+        const formatTime = (sec) => {
+            const h = Math.floor(sec / 3600).toString().padStart(2, '0');
+            const m = Math.floor((sec % 3600) / 60).toString().padStart(2, '0');
+            const s = Math.floor(sec % 60).toString().padStart(2, '0');
+            return `${h}:${m}:${s}`;
+        };
+        ytDlpArgs.push('--download-sections', `*${formatTime(startTime)}-${formatTime(endTime)}`);
+        ytDlpArgs.push('--force-keyframes-at-cuts');
+        // FORCE RECODE: This is the only way to guarantee audio sync for trimmed segments
+        ytDlpArgs.push('--recode-video', 'mp4');
+        ytDlpArgs.push('--ppa', 'ffmpeg:-async 1 -shortest');
+    }
+
+    // High Quality Formats Mapping
     if (format.includes('mp3')) {
         ytDlpArgs.push('-x', '--audio-format', 'mp3', '--audio-quality', '0'); 
     } else if (format === 'aac') {
@@ -335,6 +360,7 @@ if (startTime !== undefined && endTime !== undefined) {
     } else {
         ytDlpArgs.push('-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', '--merge-output-format', 'mp4');
     }
+
 
     try {
         console.log(`[EXEC] yt-dlp ${ytDlpArgs.join(' ')}`);

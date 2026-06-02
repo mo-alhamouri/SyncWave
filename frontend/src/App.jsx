@@ -30,11 +30,12 @@ function App() {
   const [metadata, setMetadata] = useState(null);
   const [error, setError] = useState('');
   const [format, setFormat] = useState('mp3-320');
+  const [version, setVersion] = useState('');
   
   // Refs
   const activeEventSource = useRef(null);
   const playerRef = useRef(null);
-  const inputRef = useRef(null); // Added for auto-focus
+  const inputRef = useRef(null);
   const spectrumRef = useRef(null);
   
   // Trimming State
@@ -48,12 +49,16 @@ function App() {
   const [downloadEta, setDownloadEta] = useState('');
   const [downloadMsg, setDownloadMsg] = useState('');
   const [isPlaying, setIsPlaying] = useState(false);
-  const [dragging, setDragging] = useState(null); // 'start', 'end', or null
+  const [dragging, setDragging] = useState(null);
 
-  // Auto-focus and Badge Clearing
+  // Auto-focus, Badge Clearing, and Version Check
   useEffect(() => {
     if (inputRef.current) inputRef.current.focus();
     
+    if (window.electron) {
+      window.electron.getVersion().then(setVersion);
+    }
+
     const handleFocus = () => {
       if (window.electron && window.electron.clearBadge) {
         window.electron.clearBadge();
@@ -63,6 +68,17 @@ function App() {
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, []);
+
+  const checkUpdates = async () => {
+    if (window.electron) {
+      const update = await window.electron.checkUpdates();
+      if (update && update.version !== `v${version}`) {
+        alert(`New version ${update.version} available! Download it at: ${update.url}`);
+      } else {
+        alert('You are on the latest version.');
+      }
+    }
+  };
 
   // Sync Slider to Video Preview
   const handleSeek = (time) => {
@@ -426,6 +442,10 @@ function App() {
             )}
           </div>
         )}
+      </div>
+      <div className="app-footer">
+        <span>SyncWave v{version}</span>
+        <button onClick={checkUpdates} className="update-link">Check for Updates</button>
       </div>
     </div>
   );
