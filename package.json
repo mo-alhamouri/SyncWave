@@ -1,5 +1,5 @@
 {
-  "name": "youtube-downloader-root",
+  "name": "syncwave-desktop",
   "version": "1.0.0",
   "main": "electron/main.js",
   "scripts": {
@@ -10,11 +10,19 @@
     "dev": "concurrently --kill-others \"npm run dev:frontend\" \"wait-on http://localhost:5173 && electron .\"",
     "start": "electron .",
     "build:frontend": "npm run build --prefix frontend",
-    "dist": "npm run build:frontend && electron-builder"
+    "dist": "npm run build:frontend && electron-builder",
+    "deploy": "gh-pages -d \"Marketing Website\""
   },
   "build": {
-    "appId": "com.syncwave.downloader",
-    "productName": "SyncWave Downloader",
+    "appId": "com.syncwave.app",
+    "productName": "SyncWave",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "mo-alhamouri",
+        "repo": "SyncWave"
+      }
+    ],
     "directories": {
       "output": "dist_electron"
     },
@@ -42,10 +50,12 @@
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
     "electron-is-dev": "^2.0.0",
+    "gh-pages": "^6.3.0",
     "wait-on": "^7.2.0"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "electron-updater": "^6.1.7",
     "fix-path": "^3.0.0",
     "uuid": "^14.0.0",
     "yt-dlp-wrap": "^2.3.12"

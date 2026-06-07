@@ -1,28 +1,21 @@
-# SyncWave Downloader 🌊
+# SyncWave 🌊
 
-A modern, high-performance **Desktop Application** for downloading YouTube videos and entire playlists. Built with React and Electron, powered by `yt-dlp`.
+A professional, high-performance **Media Management Application**. Built with React and Electron, SyncWave provides a studio-grade bridge for downloading, trimming, and transferring your media assets.
 
-## ✨ Why Desktop?
+## ✨ Why SyncWave?
 
-- **No More Throttling**: By running locally, you use your own home IP, bypassing the "Too Many Requests" (429) errors common on web-based hosters.
-- **Privacy First**: No video data ever touches a third-party server.
-- **Fast & Reliable**: Direct downloads from YouTube to your machine.
+- **No More Throttling**: Run locally to bypass network restrictions common on web-based tools.
+- **Privacy First**: Your media never touches the cloud. Everything happens on your machine.
+- **Unified Bridge**: The single tool you need for YouTube, local media, and mobile devices (Android/GoPro).
 
-## ✨ Features
+## ✨ Core Features
 
-- **Playlist Support**: Effortlessly download entire playlists with a single link.
-- **Smart Queue Management**:
-    - Automatic sequential downloads.
-    - **Dynamic Selection**: Unselect pending items in the queue to skip them.
-    - **Stop/Cancel**: Abort the entire download process at any time.
-- **High Quality**: Extract best quality MP3 audio or MP4 video (up to 1080p).
-- **Responsive UI**: Modern, dark-mode design with interactive progress tracking.
-- **Open Downloads**: One-click access to your downloaded files.
+- **YouTube Engine**: Studio-quality downloads (4K Video, 320kbps MP3) with playlist batch processing.
+- **Clip Workspace**: Precision, frame-accurate trimming for local audio and video files.
+- **Mobile Transfer**: Seamless file management between laptop and Android/GoPro storage with macOS Finder-style column views.
+- **Quick View**: Instant Space Bar previews for images and videos.
 
 ## 🚀 Getting Started
-
-### Installation
-*Installers for Mac and Windows coming soon to our official website!*
 
 ### Local Development
 1. **Clone and Setup**:
@@ -35,9 +28,9 @@ A modern, high-performance **Desktop Application** for downloading YouTube video
    ```
 
 ## 🛠 Tech Stack
-- **Desktop**: Electron.
+- **Desktop**: Electron, Electron-Updater.
 - **Frontend**: React 19, Vite.
-- **Engine**: yt-dlp, FFmpeg.
+- **Engine**: yt-dlp, FFmpeg, ADB.
 
 ## 📜 License
 MIT

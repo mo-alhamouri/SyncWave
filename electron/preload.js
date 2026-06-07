@@ -46,5 +46,33 @@ contextBridge.exposeInMainWorld('electron', {
 
     // Local File Trimmer
     selectFile: () => ipcRenderer.invoke('select-file'),
-    trimLocalFile: (filePath, format, startTime, endTime) => ipcRenderer.invoke('trim-local-file', filePath, format, startTime, endTime)
+    trimLocalFile: (filePath, format, startTime, endTime) => ipcRenderer.invoke('trim-local-file', filePath, format, startTime, endTime),
+
+    // Mobile Transfer
+    listDevices: () => ipcRenderer.invoke('list-devices'),
+    listLocalVolumes: () => ipcRenderer.invoke('list-local-volumes'),
+    listFiles: (path, deviceId) => ipcRenderer.invoke('list-files', path, deviceId),
+    getMobilePreview: (deviceId, remotePath) => ipcRenderer.invoke('get-mobile-preview', deviceId, remotePath),
+    transferFile: (sourcePath, destPath, sourceDeviceId, destDeviceId) => ipcRenderer.invoke('transfer-file', sourcePath, destPath, sourceDeviceId, destDeviceId),
+    renameFile: (path, newName, deviceId) => ipcRenderer.invoke('rename-file', path, newName, deviceId),
+    deleteFile: (path, deviceId) => ipcRenderer.invoke('delete-file', path, deviceId),
+
+    // Window Controls
+    minimize: () => ipcRenderer.send('window-minimize'),
+    maximize: () => ipcRenderer.send('window-maximize'),
+    unmaximize: () => ipcRenderer.send('window-unmaximize'),
+    isMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+
+    // Auto-updates
+    onUpdateAvailable: (callback) => {
+        const listener = (event, info) => callback(info);
+        ipcRenderer.on('update-available', listener);
+        return () => ipcRenderer.removeListener('update-available', listener);
+    },
+    onUpdateDownloaded: (callback) => {
+        const listener = (event, info) => callback(info);
+        ipcRenderer.on('update-downloaded', listener);
+        return () => ipcRenderer.removeListener('update-downloaded', listener);
+    },
+    quitAndInstall: () => ipcRenderer.send('quit-and-install')
 });

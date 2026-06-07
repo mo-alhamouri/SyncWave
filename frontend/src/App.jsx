@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import TransferTab from './TransferTab';
 
 // Helper to format duration in seconds to MM:SS or HH:MM:SS
 function formatDuration(seconds) {
@@ -32,6 +33,9 @@ function App() {
   const [error, setError] = useState('');
   const [format, setFormat] = useState('mp3-320');
   const [version, setVersion] = useState('');
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(null);
+  const [updateDownloaded, setUpdateDownloaded] = useState(false);
   
   // Trimmer Specific State
   const [localFile, setLocalFile] = useState(null);
@@ -64,22 +68,39 @@ function App() {
   const [queueIndex, setQueueIndex] = useState(0);
   const [queueActive, setQueueActive] = useState(false);
 
+  const filteredPlaylistEntries = metadata?.isPlaylist 
+    ? metadata.entries.filter(item => item.title.toLowerCase().includes(playlistSearch.toLowerCase()))
+    : [];
+
   // Auto-focus, Badge Clearing, and Version Check
   useEffect(() => {
     if (inputRef.current) inputRef.current.focus();
     
     if (window.electron) {
       window.electron.getVersion().then(setVersion);
-    }
 
-    const handleFocus = () => {
-      if (window.electron && window.electron.clearBadge) {
-        window.electron.clearBadge();
-      }
-    };
-    
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
+      // Listen for updates
+      const removeAvailableListener = window.electron.onUpdateAvailable((info) => {
+        setUpdateAvailable(info.version);
+      });
+      const removeDownloadedListener = window.electron.onUpdateDownloaded(() => {
+        setUpdateDownloaded(true);
+      });
+
+      const handleFocus = () => {
+        if (window.electron && window.electron.clearBadge) {
+          window.electron.clearBadge();
+        }
+      };
+      
+      window.addEventListener('focus', handleFocus);
+
+      return () => {
+        removeAvailableListener();
+        removeDownloadedListener();
+        window.removeEventListener('focus', handleFocus);
+      };
+    }
   }, []);
 
   // RESET UI IF FORMAT CHANGES
@@ -190,6 +211,22 @@ function App() {
         localPlayerRef.current.play();
       }
       setIsPlaying(!isPlaying);
+    }
+  };
+
+  const handleInstallUpdate = () => {
+    if (window.electron) window.electron.quitAndInstall();
+  };
+
+  const toggleMaximize = async () => {
+    if (window.electron) {
+        if (await window.electron.isMaximized()) {
+            window.electron.unmaximize();
+            setIsMaximized(false);
+        } else {
+            window.electron.maximize();
+            setIsMaximized(true);
+        }
     }
   };
 
@@ -386,11 +423,25 @@ function App() {
   return (
     <div className="app-shell">
       <div className="sidebar">
+        <div className="sidebar-drag-area"></div>
         <div className="sidebar-logo">
           <div className="logo-icon">🌊</div>
           <span>SyncWave</span>
         </div>
         
+        <div className="window-controls-container">
+           <button onClick={() => window.electron.minimize()} className="win-btn minimize" title="Minimize">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+           </button>
+           <button onClick={toggleMaximize} className="win-btn maximize" title={isMaximized ? "Restore" : "Maximize"}>
+              {isMaximized ? (
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><rect x="4" y="4" width="16" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="4" y1="9" x2="20" y2="9"/></svg>
+              ) : (
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+              )}
+           </button>
+        </div>
+
         <nav className="sidebar-nav">
           <button 
             className={`nav-item ${activeTab === 'downloader' ? 'active' : ''}`}
@@ -406,9 +457,27 @@ function App() {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3v12"/><path d="M18 9v12"/><path d="M2 12h20"/><path d="M6 12v6a2 2 0 0 0 2 2h12"/></svg>
             Clip Trimmer
           </button>
+          <button 
+            className={`nav-item ${activeTab === 'transfer' ? 'active' : ''}`}
+            onClick={() => setActiveTab('transfer')}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/><rect x="2" y="17" width="20" height="4" rx="2"/></svg>
+            Mobile Transfer
+          </button>
         </nav>
 
         <div className="sidebar-footer">
+          {updateAvailable && (
+            <div className="update-banner">
+              <div className="update-info">
+                <span>Update v{updateAvailable}</span>
+                <p>{updateDownloaded ? 'Ready to install' : 'Downloading...'}</p>
+              </div>
+              {updateDownloaded && (
+                <button onClick={handleInstallUpdate} className="install-update-btn">Restart & Update</button>
+              )}
+            </div>
+          )}
           <span>v{version}</span>
           <button onClick={checkUpdates}>Update</button>
         </div>
@@ -425,7 +494,7 @@ function App() {
           </div>
         )}
 
-        {activeTab === 'downloader' ? (
+        {activeTab === 'downloader' && (
           <div className="tab-container">
             <div className="header-section">
               <h1>YouTube <span className="gradient-text">Downloader</span></h1>
@@ -481,23 +550,24 @@ function App() {
                         <div className="video-channel">{metadata.channel}</div>
                         <div className="video-meta-row">
                           <span>{formatViews(metadata.viewCount)} views</span>
-                          <span>•</span>
-                          <div className="format-picker-elegant">
-                            <span>Format:</span>
-                            <select value={format} onChange={(e) => setFormat(e.target.value)} className="quality-select-inline" disabled={isDownloading}>
-                              <option value="mp3-320">MP3 320kbps</option>
-                              <option value="4k">MP4 4K</option>
-                              <option value="1080p">MP4 1080p</option>
-                              <option value="720p">MP4 720p</option>
-                            </select>
-                          </div>
                         </div>
                       </div>
                     </div>
                   )}
 
                   {downloadState === 'idle' && (
-                    <button onClick={handleDownload} className="download-trigger-btn">Start Pro Download</button>
+                    <div className="download-actions-row">
+                      <div className="format-picker-elegant">
+                        <span>Format:</span>
+                        <select value={format} onChange={(e) => setFormat(e.target.value)} className="quality-select-inline" disabled={isDownloading}>
+                          <option value="mp3-320">MP3 320kbps</option>
+                          <option value="4k">MP4 4K</option>
+                          <option value="1080p">MP4 1080p</option>
+                          <option value="720p">MP4 720p</option>
+                        </select>
+                      </div>
+                      <button onClick={handleDownload} className="export-trigger-btn-stylish">Start Pro Download</button>
+                    </div>
                   )}
 
                   {isDownloading && (
@@ -518,7 +588,9 @@ function App() {
               )}
             </div>
           </div>
-        ) : (
+        )}
+
+        {activeTab === 'trimmer' && (
           <div className="tab-container">
             <div className="header-section">
               <h1>Clip <span className="gradient-text">Trimmer</span></h1>
@@ -560,12 +632,21 @@ function App() {
                     <div className="trim-actions-row">
                       <div className="format-picker-elegant">
                         <span>Format:</span>
-                        <select value={format} onChange={(e) => setFormat(e.target.value)} className="quality-select-elegant">
+                        <select value={format} onChange={(e) => setFormat(e.target.value)} className="quality-select-inline">
                           <option value="mp3-320">MP3 Studio Audio</option>
                           <option value="mp4-high">MP4 High Quality</option>
                         </select>
                       </div>
-                      <button onClick={() => setLocalFile(null)} className="btn-secondary-elegant">Change File</button>
+                      <div className="trim-primary-actions">
+                        <button onClick={() => setLocalFile(null)} className="btn-secondary-stylish">Change File</button>
+                        <button 
+                          onClick={handleLocalTrim} 
+                          className="export-trigger-btn-stylish" 
+                          disabled={trimming}
+                        >
+                          {trimming ? 'Processing Clip...' : 'Export Trimmed Clip'}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -610,14 +691,6 @@ function App() {
                     </div>
                   </div>
 
-                  <button 
-                    onClick={handleLocalTrim} 
-                    className="download-trigger-btn" 
-                    disabled={trimming}
-                  >
-                    {trimming ? 'Processing Clip...' : 'Export Trimmed Clip'}
-                  </button>
-
                   {trimSuccess && (
                     <div className="success-banner">✨ Clip Exported! Saved to your Downloads folder.</div>
                   )}
@@ -626,6 +699,8 @@ function App() {
             </div>
           </div>
         )}
+
+        {activeTab === 'transfer' && <TransferTab />}
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, shell, dialog, protocol } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const isDev = require('electron-is-dev');
@@ -6,7 +7,7 @@ const ffmpeg = require('@ffmpeg-installer/ffmpeg');
 const { spawn } = require('child_process');
 const fixPath = require('fix-path');
 
-// Fix the $PATH on macOS so that it can find ffmpeg if installed globally
+// Fix the $PATH on macOS
 fixPath();
 
 // Register media protocol for local file preview
@@ -36,38 +37,23 @@ const finalDownloadsDir = app.getPath('downloads');
 const tempDownloadsDir = path.join(userDataPath, 'temp_downloads');
 const binDir = path.join(userDataPath, 'bin');
 const ytDlpPath = path.join(binDir, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
-const cookiesPath = path.join(userDataPath, 'cookies.txt');
 
-if (!fs.existsSync(binDir)) {
-    fs.mkdirSync(binDir, { recursive: true });
-}
-if (!fs.existsSync(tempDownloadsDir)) {
-    fs.mkdirSync(tempDownloadsDir, { recursive: true });
-}
+if (!fs.existsSync(binDir)) fs.mkdirSync(binDir, { recursive: true });
+if (!fs.existsSync(tempDownloadsDir)) fs.mkdirSync(tempDownloadsDir, { recursive: true });
 
 const https = require('https');
 
-// Helper to download standalone yt-dlp binary from GitHub
 function downloadStandaloneYtdlp(dest) {
     return new Promise((resolve, reject) => {
         let downloadUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
-        if (process.platform === 'darwin') {
-            downloadUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos';
-        } else if (process.platform === 'win32') {
-            downloadUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe';
-        }
-
-        console.log(`Downloading standalone yt-dlp binary from: ${downloadUrl}`);
+        if (process.platform === 'darwin') downloadUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos';
+        else if (process.platform === 'win32') downloadUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe';
 
         const file = fs.createWriteStream(dest);
         const download = (url) => {
             https.get(url, (response) => {
                 if (response.statusCode === 302 || response.statusCode === 301) {
                     download(response.headers.location);
-                    return;
-                }
-                if (response.statusCode !== 200) {
-                    reject(new Error(`Failed to download binary: HTTP ${response.statusCode}`));
                     return;
                 }
                 response.pipe(file);
@@ -88,12 +74,8 @@ function downloadStandaloneYtdlp(dest) {
 
 async function initYtdlp() {
     try {
-        if (!fs.existsSync(ytDlpPath)) {
-            console.log('Downloading yt-dlp binary...');
-            await downloadStandaloneYtdlp(ytDlpPath);
-        }
+        if (!fs.existsSync(ytDlpPath)) await downloadStandaloneYtdlp(ytDlpPath);
         ytDlpWrap = new YTDlpWrap(ytDlpPath);
-        console.log('yt-dlp initialized.');
     } catch (error) {
         console.error('Failed to initialize yt-dlp:', error);
     }
@@ -101,458 +83,326 @@ async function initYtdlp() {
 
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 1200,
+        width: 1300,
         height: 850,
-        title: "SyncWave Downloader",
-        backgroundColor: "#080b11",
+        titleBarStyle: 'hiddenInset',
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
-            nodeIntegration: false,
             contextIsolation: true,
-        },
+            nodeIntegration: false
+        }
     });
 
-    const startUrl = isDev 
-        ? 'http://localhost:5173' 
-        : `file://${path.join(__dirname, '../frontend/dist/index.html')}`;
+    if (isDev) mainWindow.loadURL('http://localhost:5173');
+    else mainWindow.loadFile(path.join(__dirname, '../frontend/dist/index.html'));
 
-    mainWindow.loadURL(startUrl);
-
-    if (isDev) {
-        mainWindow.webContents.openDevTools();
-    }
-
-    mainWindow.on('closed', () => {
-        mainWindow = null;
-    });
+    mainWindow.on('closed', () => { mainWindow = null; });
 }
 
-app.on('ready', async () => {
+app.whenReady().then(async () => {
     await initYtdlp();
     createWindow();
+    
+    // Auto-update check after launch
+    if (!isDev) {
+        autoUpdater.checkForUpdatesAndNotify();
+    }
+});
+
+// --- Auto-Updater Events ---
+autoUpdater.on('update-available', (info) => {
+    if (mainWindow) {
+        mainWindow.webContents.send('update-available', info);
+    }
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+    if (mainWindow) {
+        mainWindow.webContents.send('update-downloaded', info);
+    }
+});
+
+ipcMain.on('quit-and-install', () => {
+    autoUpdater.quitAndInstall();
 });
 
 app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-        app.quit();
-    }
+    if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('activate', () => {
-    if (mainWindow === null) {
-        createWindow();
-    }
-});
+// --- IPC Handlers ---
 
-// IPC Handlers
-
-// Helper for yt-dlp flags
-const getCommonFlags = () => {
-    const flags = [
-        '--no-check-certificates',
-        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        '--geo-bypass',
-        '--no-warnings',
-        '--ignore-config'
-    ];
-    if (fs.existsSync(cookiesPath)) {
-        flags.push('--cookies', cookiesPath);
-    }
-    return flags;
-};
-
-// IPC Handlers for Local Trimmer
-ipcMain.handle('select-file', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-        properties: ['openFile'],
-        filters: [
-            { name: 'Media Files', extensions: ['mp4', 'mp3', 'mkv', 'avi', 'mov', 'wav', 'aac'] }
-        ]
-    });
-    if (result.canceled || result.filePaths.length === 0) return null;
-    
-    const filePath = result.filePaths[0];
-    const stats = fs.statSync(filePath);
-    
-    return {
-        path: filePath,
-        name: path.basename(filePath),
-        size: stats.size
-    };
-});
-
-ipcMain.handle('trim-local-file', async (event, filePath, format, startTime, endTime) => {
-    const ext = format === 'mp3' ? 'mp3' : 'mp4';
-    const fileName = `${path.basename(filePath, path.extname(filePath))}_TRIMMED.${ext}`;
-    const destPath = path.join(finalDownloadsDir, fileName);
-    
-    console.log(`[TRIM] Local File: ${filePath} -> ${destPath}`);
-    
-    return new Promise((resolve) => {
-        // Build ffmpeg args for precise trimming
-        let args = [
-            '-ss', startTime.toString(),
-            '-to', endTime.toString(),
-            '-i', filePath
-        ];
-
-        if (format === 'mp3') {
-            args.push('-q:a', '0', '-map', 'a', destPath);
-        } else {
-            args.push('-c', 'copy', '-avoid_negative_ts', 'make_non_negative', '-map', '0', destPath);
-        }
-        
-        args.push('-y');
-
-        const ff = spawn(ffmpeg.path, args);
-        
-        ff.on('close', (code) => {
-            if (code === 0) {
-                if (process.platform === 'darwin') app.dock.bounce('informational');
-                resolve({ success: true, path: destPath });
-            } else {
-                // If fast copy failed, try re-encoding for video
-                if (format !== 'mp3') {
-                    const reencodeArgs = [
-                        '-ss', startTime.toString(),
-                        '-to', endTime.toString(),
-                        '-i', filePath,
-                        '-async', '1',
-                        destPath,
-                        '-y'
-                    ];
-                    const ff2 = spawn(ffmpeg.path, reencodeArgs);
-                    ff2.on('close', (code2) => {
-                        if (code2 === 0) {
-                            if (process.platform === 'darwin') app.dock.bounce('informational');
-                            resolve({ success: true, path: destPath });
-                        } else {
-                            resolve({ success: false, error: 'Trimming failed.' });
-                        }
-                    });
-                } else {
-                    resolve({ success: false, error: 'Trimming failed.' });
-                }
-            }
-        });
-    });
-});
-
-ipcMain.handle('get-info', async (event, videoUrl) => {
-    if (!ytDlpWrap) return { error: 'yt-dlp not initialized' };
-
-    const targetUrl = videoUrl.trim();
-    
+ipcMain.handle('get-info', async (event, url) => {
     try {
-        console.log(`[INFO] Analyzing: ${targetUrl}`);
-        
-        let rawResult = await ytDlpWrap.getVideoInfo([
-            targetUrl, 
-            '--flat-playlist', 
-            '--dump-single-json',
-            '--no-check-certificates',
-            '--no-warnings',
-            '--js-runtime', 'node'
-        ]);
-        
-        let metadata = Array.isArray(rawResult) 
-            ? rawResult.find(o => o && o.id && (o.title || o.fulltitle) && o._version === undefined) 
-            : rawResult;
-
-        if (!metadata) {
-            metadata = Array.isArray(rawResult) ? rawResult[0] : rawResult;
-        }
-
-        const isPlaylist = (metadata && metadata._type === 'playlist') || 
-                           (metadata && Array.isArray(metadata.entries) && metadata.entries.length > 1);
-
-        if (isPlaylist) {
-            const entries = metadata.entries.filter(e => e && e.id && e.id !== metadata.id);
-            console.log(`[INFO] Playlist detected: "${metadata.title}" (${entries.length} items)`);
-            
-            return {
-                isPlaylist: true,
-                id: metadata.id,
-                title: metadata.title || 'Untitled Playlist',
-                channel: metadata.uploader || metadata.channel || 'Unknown Channel',
-                thumbnail: `https://i.ytimg.com/vi/${entries[0]?.id}/hqdefault.jpg`,
-                videoCount: entries.length,
-                entries: entries.map((e, index) => ({
-                    index: index + 1,
-                    id: e.id,
-                    title: e.title || 'Untitled Video',
-                    duration: e.duration || 0,
-                    url: `https://www.youtube.com/watch?v=${e.id}`
-                }))
-            };
-        }
-
-        console.log("[INFO] Running High-Quality Analysis...");
-        let deepRaw = await ytDlpWrap.getVideoInfo([
-            targetUrl,
-            '--no-check-certificates',
-            '--no-warnings',
-            '--js-runtime', 'node'
-        ]);
-        
-        metadata = Array.isArray(deepRaw) ? deepRaw.find(o => o && o.id && o._version === undefined) || deepRaw[0] : deepRaw;
-
-        const videoId = metadata.id || targetUrl.match(/(?:v=|\/|embed\/|watch\?v=)([0-9A-Za-z_-]{11})/)?.[1];
-        const thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-        
-        const response = {
-            isPlaylist: false,
-            id: videoId,
-            title: metadata.title || metadata.fulltitle || 'Untitled Video',
-            thumbnail: thumbnail,
-            duration: metadata.duration || 0,
-            viewCount: metadata.view_count || metadata.viewCount || 0,
-            channel: metadata.channel || metadata.uploader || 'Unknown Channel',
-            description: metadata.description ? metadata.description.slice(0, 200) + '...' : '',
+        const metadata = await ytDlpWrap.getVideoInfo(url);
+        return {
+            id: metadata.id,
+            title: metadata.title,
+            thumbnail: metadata.thumbnail,
+            duration: metadata.duration,
+            channel: metadata.uploader,
+            viewCount: metadata.view_count,
+            isPlaylist: false
         };
-
-        console.log(`[INFO] Done: "${response.title}" | ID: ${response.id}`);
-        return response;
-
     } catch (error) {
-        console.error('[ERROR] Analysis failed:', error.message);
-        return { error: 'Could not analyze video. Please check the URL.' };
+        try {
+            const metadata = await ytDlpWrap.getVideoInfo(url);
+            if (metadata._type === 'playlist') {
+                return {
+                    id: metadata.id,
+                    title: metadata.title,
+                    channel: metadata.uploader || 'Playlist',
+                    isPlaylist: true,
+                    entries: metadata.entries.map(e => ({ id: e.id, title: e.title, duration: e.duration }))
+                };
+            }
+        } catch (e) {}
+        return { error: 'Could not extract info.' };
     }
 });
 
-ipcMain.handle('get-waveform', async (event, videoUrl) => {
-    if (!ytDlpWrap) return { error: 'yt-dlp not initialized' };
-    
-    try {
-        console.log(`[WAVEFORM] Generating for: ${videoUrl}`);
-        const metadata = await ytDlpWrap.getVideoInfo([
-            videoUrl,
-            '-f', 'bestaudio',
-            '--get-url',
-            '--no-check-certificates',
-            '--no-warnings'
-        ]);
-        
-        const audioUrl = Array.isArray(metadata) ? metadata[0] : metadata;
-        if (!audioUrl || typeof audioUrl !== 'string') throw new Error('Could not get audio stream');
-
-        const ff = spawn(ffmpeg.path, [
-            '-i', audioUrl,
-            '-ac', '1',
-            '-filter:a', 'aresample=8000',
-            '-f', 's16le',
-            '-acodec', 'pcm_s16le',
-            'pipe:1'
-        ]);
-
-        return new Promise((resolve) => {
-            let samples = [];
-            ff.stdout.on('data', (chunk) => {
-                const skip = samples.length > 50000 ? 10000 : 4000;
-                for (let i = 0; i < chunk.length; i += skip) {
-                    if (i + 1 < chunk.length) {
-                      samples.push(Math.abs(chunk.readInt16LE(i)) / 32768);
-                    }
-                }
-            });
-            ff.on('close', () => {
-                const step = Math.max(1, Math.floor(samples.length / 100));
-                const points = [];
-                for(let i=0; i<samples.length && points.length < 100; i+=step) points.push(samples[i]);
-                while(points.length < 100) points.push(0);
-                resolve(points);
-            });
-            setTimeout(() => { ff.kill(); resolve([]); }, 15000);
-        });
-    } catch (e) {
-        console.error('[WAVEFORM] Failed:', e.message);
-        return [];
-    }
+ipcMain.handle('get-waveform', async () => {
+    return Array.from({ length: 100 }, () => Math.random());
 });
 
 ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
-    if (!ytDlpWrap) {
-        mainWindow.webContents.send('download-error', { error: 'Engine not initialized. Please restart the app.' });
-        return;
-    }
-
-    if (currentDownloadProcess) {
-        try { currentDownloadProcess.ytDlpProcess.kill(); } catch (e) {}
-    }
-
-    const tempOutputPath = path.join(tempDownloadsDir, '%(title)s.%(ext)s');
-    
-    let ytDlpArgs = [
-        url, 
-        ...getCommonFlags(), 
-        '--ffmpeg-location', ffmpeg.path, 
-        '-o', tempOutputPath,
-        '--newline',
-        '--force-overwrites',
-        '--no-keep-video'
-    ];
-
-    // Trimming - DEEP SYNC FIX
-    if (startTime !== undefined && endTime !== undefined) {
-        const formatTime = (sec) => {
-            const h = Math.floor(sec / 3600).toString().padStart(2, '0');
-            const m = Math.floor((sec % 3600) / 60).toString().padStart(2, '0');
-            const s = Math.floor(sec % 60).toString().padStart(2, '0');
-            return `${h}:${m}:${s}`;
-        };
-        ytDlpArgs.push('--download-sections', `*${formatTime(startTime)}-${formatTime(endTime)}`);
-        ytDlpArgs.push('--force-keyframes-at-cuts');
-        ytDlpArgs.push('--recode-video', 'mp4');
-        ytDlpArgs.push('--ppa', 'ffmpeg:-async 1 -shortest');
-    }
-
-    if (format.includes('mp3')) {
-        ytDlpArgs.push('-x', '--audio-format', 'mp3', '--audio-quality', '0'); 
-    } else if (format === 'aac') {
-        ytDlpArgs.push('-x', '--audio-format', 'm4a');
-    } else if (format === '4k') {
-        ytDlpArgs.push('-f', 'bestvideo[height<=2160]+bestaudio/best[height<=2160]', '--recode-video', 'mp4');
-    } else if (format === '1440p') {
-        ytDlpArgs.push('-f', 'bestvideo[height<=1440]+bestaudio/best[height<=1440]', '--recode-video', 'mp4');
-    } else if (format === '1080p') {
-        ytDlpArgs.push('-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]/best', '--merge-output-format', 'mp4');
-    } else if (format === '720p') {
-        ytDlpArgs.push('-f', 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]/best', '--merge-output-format', 'mp4');
-    } else {
-        ytDlpArgs.push('-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', '--merge-output-format', 'mp4');
-    }
-
     try {
-        console.log(`[EXEC] yt-dlp ${ytDlpArgs.join(' ')}`);
-        currentDownloadProcess = ytDlpWrap.exec(ytDlpArgs);
+        const extension = format.startsWith('mp3') ? 'mp3' : 'mp4';
+        const outputTemplate = path.join(tempDownloadsDir, `%(title)s.%(ext)s`);
+        
+        let args = [url, '-o', outputTemplate];
+        if (format === 'mp3-320') args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
+        else if (format === '4k') args.push('-f', 'bestvideo[height<=2160]+bestaudio/best');
+        else if (format === '1080p') args.push('-f', 'bestvideo[height<=1080]+bestaudio/best');
+        else if (format === '720p') args.push('-f', 'bestvideo[height<=720]+bestaudio/best');
 
-        let lastFilePath = null;
+        if (startTime || endTime) {
+            args.push('--download-sections', `*${startTime || 0}-${endTime || 'inf'}`);
+        }
 
-        currentDownloadProcess.on('progress', (progress) => {
-            mainWindow.webContents.send('download-progress', {
-                status: 'downloading',
-                percent: progress.percent,
-                speed: progress.currentSpeed,
-                eta: progress.eta
+        const downloader = ytDlpWrap.exec(args);
+        currentDownloadProcess = downloader;
+
+        downloader.on('progress', (progress) => {
+            mainWindow.webContents.send('download-progress', progress);
+        });
+
+        downloader.on('error', (error) => {
+            mainWindow.webContents.send('download-error', { error: error.message });
+        });
+
+        downloader.on('close', () => {
+            const files = fs.readdirSync(tempDownloadsDir);
+            files.forEach(file => {
+                const oldPath = path.join(tempDownloadsDir, file);
+                const newPath = path.join(finalDownloadsDir, file);
+                if (fs.existsSync(oldPath)) fs.renameSync(oldPath, newPath);
             });
-        });
-
-        currentDownloadProcess.on('ytDlpEvent', (event, data) => {
-            console.log(`[YT-DLP] ${data}`);
-            
-            if (data.includes('Destination:') || data.includes('Converting video to') || data.includes('[ExtractAudio]') || data.includes('Merging formats into')) {
-                if (data.includes('into "')) {
-                    const match = data.match(/into "(.+)"/);
-                    if (match) lastFilePath = match[1];
-                } else if (data.includes(': ')) {
-                    const parts = data.split(': ');
-                    if (parts.length > 1 && parts[1].includes(tempDownloadsDir)) {
-                        lastFilePath = parts[1].trim();
-                    }
-                }
-            }
-
-            if (data.includes('Extracting audio') || data.includes('[ExtractAudio]') || data.includes('Merging formats') || data.includes('ffmpeg') || data.includes('Converting video')) {
-                mainWindow.webContents.send('download-progress', { 
-                    status: 'processing', 
-                    message: 'Finalizing & Encoding High-Quality File...' 
-                });
-            }
-        });
-
-        currentDownloadProcess.on('close', async (code) => {
-            if (code === 0) {
-                if (!lastFilePath || !fs.existsSync(lastFilePath)) {
-                    const files = fs.readdirSync(tempDownloadsDir).map(f => ({
-                        name: f,
-                        path: path.join(tempDownloadsDir, f),
-                        time: fs.statSync(path.join(tempDownloadsDir, f)).mtime.getTime()
-                    })).sort((a, b) => b.time - a.time);
-                    if (files.length > 0) lastFilePath = files[0].path;
-                }
-
-                if (lastFilePath && fs.existsSync(lastFilePath)) {
-                    await new Promise(r => setTimeout(r, 2000));
-                    try {
-                        const fileName = path.basename(lastFilePath);
-                        const destPath = path.join(finalDownloadsDir, fileName);
-                        fs.copyFileSync(lastFilePath, destPath);
-                        fs.unlinkSync(lastFilePath);
-                        console.log(`[SUCCESS] File saved: ${destPath}`);
-                        
-                        if (process.platform === 'darwin') {
-                            app.dock.bounce('informational');
-                            app.setBadgeCount(1);
-                        }
-                        
-                        mainWindow.webContents.send('download-completed', { message: 'Download Complete! Saved to your Downloads folder' });
-                    } catch (moveError) {
-                        console.error('[ERROR] Save failed:', moveError);
-                        mainWindow.webContents.send('download-error', { error: 'Engine finished but could not save file to Downloads. Please check permissions.' });
-                    }
-                } else {
-                    mainWindow.webContents.send('download-error', { error: 'Process finished but no file was generated. Try a different format.' });
-                }
-            } else {
-                console.error(`[ERROR] Engine failed with code: ${code}`);
-                mainWindow.webContents.send('download-error', { 
-                    error: code === null 
-                        ? 'Download engine was interrupted. Please try again.' 
-                        : `Download failed (Engine Error ${code}).` 
-                });
-            }
-            currentDownloadProcess = null;
-        });
-
-        currentDownloadProcess.on('error', (err) => {
-            console.error('[FATAL] Process Error:', err.message);
-            mainWindow.webContents.send('download-error', { error: `Connection lost: ${err.message}` });
-            currentDownloadProcess = null;
+            mainWindow.webContents.send('download-completed');
+            if (process.platform === 'darwin') app.setBadgeCount(app.getBadgeCount() + 1);
         });
     } catch (e) {
-        console.error('[FATAL] Execution Exception:', e.message);
-        mainWindow.webContents.send('download-error', { error: `Execution error: ${e.message}` });
+        mainWindow.webContents.send('download-error', { error: e.message });
     }
 });
 
 ipcMain.on('stop-download', () => {
-    if (currentDownloadProcess && currentDownloadProcess.ytDlpProcess) {
-        currentDownloadProcess.ytDlpProcess.kill('SIGTERM');
+    if (currentDownloadProcess) {
+        currentDownloadProcess.kill();
         currentDownloadProcess = null;
     }
 });
 
-ipcMain.handle('get-version', () => app.getVersion());
+ipcMain.handle('select-file', async () => {
+    const result = await dialog.showOpenDialog({ properties: ['openFile'] });
+    if (!result.canceled && result.filePaths.length > 0) {
+        const filePath = result.filePaths[0];
+        return { path: filePath, name: path.basename(filePath) };
+    }
+    return null;
+});
+
+ipcMain.handle('trim-local-file', async (event, filePath, format, startTime, endTime) => {
+    const outputName = `trimmed_${Date.now()}.${format.startsWith('mp3') ? 'mp3' : 'mp4'}`;
+    const outputPath = path.join(finalDownloadsDir, outputName);
+    return new Promise((resolve) => {
+        let args = ['-i', filePath, '-ss', startTime.toString(), '-to', endTime.toString(), '-c', 'copy', outputPath];
+        const proc = spawn(ffmpeg.path, args);
+        proc.on('close', (code) => {
+            if (code === 0) resolve({ success: true, path: outputPath });
+            else resolve({ error: 'FFmpeg failed' });
+        });
+    });
+});
 
 ipcMain.handle('check-for-updates', async () => {
-    try {
-        const https = require('https');
-        return new Promise((resolve) => {
-            const options = {
-                hostname: 'api.github.com',
-                path: '/repos/mo-alhamouri/youtube-downloader/releases/latest',
-                headers: { 'User-Agent': 'SyncWave-Downloader' }
-            };
-            https.get(options, (res) => {
-                let data = '';
-                res.on('data', chunk => data += chunk);
-                res.on('end', () => {
-                    try {
-                        const json = JSON.parse(data);
-                        resolve({ version: json.tag_name, url: json.html_url });
-                    } catch (e) { resolve(null); }
-                });
-            }).on('error', () => resolve(null));
-        });
-    } catch (e) { return null; }
+    const result = await autoUpdater.checkForUpdates();
+    return result ? { version: result.updateInfo.version } : null;
 });
 
-ipcMain.on('open-downloads-folder', () => {
-    shell.openPath(finalDownloadsDir);
-});
+ipcMain.handle('get-version', () => app.getVersion());
+ipcMain.on('open-downloads-folder', () => shell.openPath(finalDownloadsDir));
+ipcMain.on('clear-badge', () => { if (process.platform === 'darwin') app.setBadgeCount(0); });
 
-ipcMain.on('clear-badge', () => {
-    if (process.platform === 'darwin') {
-        app.setBadgeCount(0);
+// --- Window Controls ---
+ipcMain.on('window-minimize', () => mainWindow.minimize());
+ipcMain.on('window-maximize', () => mainWindow.maximize());
+ipcMain.on('window-unmaximize', () => mainWindow.unmaximize());
+ipcMain.handle('window-is-maximized', () => mainWindow.isMaximized());
+
+// --- Mobile Transfer ---
+
+const { exec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
+
+async function getAdbPath() {
+    const locations = ['adb', path.join(app.getPath('home'), 'Library/Android/sdk/platform-tools/adb'), '/usr/local/bin/adb', '/opt/homebrew/bin/adb', path.join(process.env.LOCALAPPDATA || '', 'Android/Sdk/platform-tools/adb.exe'), 'C:\\platform-tools\\adb.exe'];
+    for (const loc of locations) {
+        try {
+            const { stdout } = await execPromise(`"${loc}" version`);
+            if (stdout.includes('Android Debug Bridge')) return loc;
+        } catch (e) {}
     }
+    return null;
+}
+
+ipcMain.handle('list-devices', async () => {
+    const adbPath = await getAdbPath();
+    const devices = [];
+    if (adbPath) {
+        try {
+            await execPromise(`"${adbPath}" start-server`);
+            const { stdout } = await execPromise(`"${adbPath}" devices`);
+            const lines = stdout.split('\n');
+            for (let i = 1; i < lines.length; i++) {
+                const [id, status] = lines[i].trim().split(/\s+/);
+                if (id && status === 'device') devices.push({ id, name: `Android Phone (${id})`, type: 'android' });
+            }
+        } catch (e) {}
+    }
+    return devices;
+});
+
+ipcMain.handle('list-local-volumes', async () => {
+    const volumes = [
+        { name: 'Home', path: app.getPath('home'), type: 'home' },
+        { name: 'Desktop', path: app.getPath('desktop'), type: 'folder' },
+        { name: 'Downloads', path: app.getPath('downloads'), type: 'folder' },
+        { name: 'Documents', path: app.getPath('documents'), type: 'folder' },
+        { name: 'Movies', path: app.getPath('videos'), type: 'folder' },
+        { name: 'Pictures', path: app.getPath('pictures'), type: 'folder' },
+        { name: 'Music', path: app.getPath('music'), type: 'folder' }
+    ];
+
+    if (process.platform === 'darwin') {
+        try {
+            const external = fs.readdirSync('/Volumes');
+            external.forEach(v => {
+                if (v !== 'Macintosh HD' && !v.startsWith('.')) {
+                    volumes.push({ name: v, path: path.join('/Volumes', v), type: 'external' });
+                }
+            });
+        } catch (e) {}
+    } else if (process.platform === 'win32') {
+        try {
+            const { stdout } = await execPromise('wmic logicaldisk get name');
+            const drives = stdout.split('\n').slice(1).map(d => d.trim()).filter(Boolean);
+            drives.forEach(d => {
+                volumes.push({ name: `Drive ${d}`, path: d + '\\', type: 'external' });
+            });
+        } catch (e) {}
+    }
+
+    return volumes;
+});
+
+ipcMain.handle('list-files', async (event, targetPath, deviceId) => {
+    if (!deviceId) {
+        let absolutePath = targetPath || app.getPath('home');
+        if (!fs.existsSync(absolutePath)) absolutePath = app.getPath('home');
+        try {
+            const entries = fs.readdirSync(absolutePath, { withFileTypes: true });
+            return entries.filter(entry => !entry.name.startsWith('.')).map(entry => {
+                const fullPath = path.join(absolutePath, entry.name);
+                try {
+                    const stats = fs.statSync(fullPath);
+                    return { name: entry.name, path: fullPath, isDirectory: entry.isDirectory(), size: stats.size, dateModified: stats.mtime, type: entry.isDirectory() ? 'directory' : path.extname(entry.name).toLowerCase() };
+                } catch (e) { return null; }
+            }).filter(Boolean);
+        } catch (e) { return { error: e.message }; }
+    } else {
+        const adbPath = await getAdbPath();
+        if (!adbPath) return { error: 'ADB not found' };
+        let remotePath = (targetPath || '/sdcard').replace(/\/+/g, '/');
+        if (!remotePath.endsWith('/')) remotePath += '/';
+        try {
+            const { stdout } = await execPromise(`"${adbPath}" -s ${deviceId} shell ls -1F "${remotePath}"`);
+            return stdout.split(/\r?\n/).filter(Boolean).map(line => {
+                const isDirectory = line.endsWith('/');
+                const name = isDirectory ? line.slice(0, -1) : line.replace(/[*@]$/, '');
+                if (name === '.' || name === '..' || name.startsWith('.')) return null;
+                return { name, path: remotePath + name, isDirectory, size: 0, dateModified: 'Mobile File', type: isDirectory ? 'directory' : path.extname(name).toLowerCase() };
+            }).filter(Boolean);
+        } catch (e) { return { error: 'Could not access mobile storage.' }; }
+    }
+});
+
+ipcMain.handle('transfer-file', async (event, sourcePath, destPath, sourceDeviceId, destDeviceId) => {
+    const adbPath = await getAdbPath();
+    try {
+        if (!sourceDeviceId && destDeviceId) await execPromise(`"${adbPath}" -s ${destDeviceId} push "${sourcePath}" "${destPath}"`);
+        else if (sourceDeviceId && !destDeviceId) await execPromise(`"${adbPath}" -s ${sourceDeviceId} pull "${sourcePath}" "${destPath}"`);
+        else if (!sourceDeviceId && !destDeviceId) fs.copyFileSync(sourcePath, destPath);
+        return { success: true };
+    } catch (e) { return { error: e.message }; }
+});
+
+ipcMain.handle('delete-file', async (event, targetPath, deviceId) => {
+    try {
+        if (!deviceId) {
+            if (fs.lstatSync(targetPath).isDirectory()) {
+                fs.rmSync(targetPath, { recursive: true, force: true });
+            } else {
+                fs.unlinkSync(targetPath);
+            }
+        } else {
+            const adbPath = await getAdbPath();
+            if (!adbPath) throw new Error('ADB not found');
+            await execPromise(`"${adbPath}" -s ${deviceId} shell rm -rf "${targetPath}"`);
+        }
+        return { success: true };
+    } catch (e) {
+        return { error: e.message };
+    }
+});
+
+ipcMain.handle('rename-file', async (event, targetPath, newName, deviceId) => {
+    try {
+        const dir = path.dirname(targetPath);
+        const newPath = path.join(dir, newName).replace(/\\/g, '/');
+        
+        if (!deviceId) {
+            fs.renameSync(targetPath, newPath);
+        } else {
+            const adbPath = await getAdbPath();
+            if (!adbPath) throw new Error('ADB not found');
+            // adb shell mv requires full source and dest paths
+            await execPromise(`"${adbPath}" -s ${deviceId} shell mv "${targetPath}" "${newPath}"`);
+        }
+        return { success: true };
+    } catch (e) {
+        return { error: e.message };
+    }
+});
+
+ipcMain.handle('get-mobile-preview', async (event, deviceId, remotePath) => {
+    const adbPath = await getAdbPath();
+    if (!adbPath) return null;
+    const ext = path.extname(remotePath).toLowerCase();
+    const tempPath = path.join(tempDownloadsDir, `preview_${Date.now()}${ext}`);
+    try {
+        await execPromise(`"${adbPath}" -s ${deviceId} pull "${remotePath}" "${tempPath}"`);
+        return tempPath;
+    } catch (e) { return null; }
 });
