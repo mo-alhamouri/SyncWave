@@ -1,0 +1,41 @@
+name: Build/Release SyncWave
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on version tags like v1.0.0
+
+jobs:
+  release:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: |
+          npm install
+          npm run setup:backend
+          npm run setup:frontend
+
+      - name: Build and Release Electron App
+        uses: samuelmeuli/action-electron-builder@v1
+        with:
+          # GitHub token handled by the action
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          
+          # Build and release
+          release: true
+          
+          # Max concurrency
+          max_attempts: 3

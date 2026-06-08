@@ -31,3 +31,4 @@ check_entries.js
 .env.development.local
 .env.test.local
 .env.production.local
+dist_electron/
