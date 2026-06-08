@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const baseUrl = `https://github.com/${GITHUB_REPO}/releases/download/v${RELEASE_VERSION}`;
         
         if (platform.includes('mac')) {
-            return `${baseUrl}/SyncWave-${RELEASE_VERSION}.dmg`;
+            return `${baseUrl}/SyncWave-${RELEASE_VERSION}-arm64.dmg`;
         } else if (platform.includes('win')) {
             return `${baseUrl}/SyncWave-Setup-${RELEASE_VERSION}.exe`;
         }
