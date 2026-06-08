@@ -7,20 +7,23 @@ const ffmpeg = require('@ffmpeg-installer/ffmpeg');
 const { spawn } = require('child_process');
 const fixPath = require('fix-path');
 
+// Global error handling
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+    if (app.isReady()) {
+        dialog.showErrorBox('SyncWave Error (Uncaught Exception)', error.stack || error.message || String(error));
+    }
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    if (app.isReady()) {
+        dialog.showErrorBox('SyncWave Error (Unhandled Rejection)', reason?.stack || reason?.message || String(reason));
+    }
+});
+
 // Fix the $PATH on macOS
 fixPath();
-
-// Register media protocol for local file preview
-app.whenReady().then(() => {
-    protocol.registerFileProtocol('media', (request, callback) => {
-        const url = request.url.replace('media://', '');
-        try {
-            return callback(decodeURIComponent(url));
-        } catch (error) {
-            console.error(error);
-        }
-    });
-});
 
 let YTDlpWrap = require('yt-dlp-wrap');
 if (YTDlpWrap.default) {
@@ -31,44 +34,53 @@ let mainWindow;
 let ytDlpWrap = null;
 let currentDownloadProcess = null;
 
-// Directories setup
-const userDataPath = app.getPath('userData');
-const finalDownloadsDir = app.getPath('downloads');
-const tempDownloadsDir = path.join(userDataPath, 'temp_downloads');
-const binDir = path.join(userDataPath, 'bin');
-const ytDlpPath = path.join(binDir, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
-
-if (!fs.existsSync(binDir)) fs.mkdirSync(binDir, { recursive: true });
-if (!fs.existsSync(tempDownloadsDir)) fs.mkdirSync(tempDownloadsDir, { recursive: true });
+// Paths will be initialized in app.whenReady()
+let userDataPath;
+let finalDownloadsDir;
+let tempDownloadsDir;
+let binDir;
+let ytDlpPath;
 
 const https = require('https');
 
 function downloadStandaloneYtdlp(dest) {
     return new Promise((resolve, reject) => {
-        let downloadUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
-        if (process.platform === 'darwin') downloadUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos';
-        else if (process.platform === 'win32') downloadUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe';
+        try {
+            let downloadUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
+            if (process.platform === 'darwin') downloadUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos';
+            else if (process.platform === 'win32') downloadUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe';
 
-        const file = fs.createWriteStream(dest);
-        const download = (url) => {
-            https.get(url, (response) => {
-                if (response.statusCode === 302 || response.statusCode === 301) {
-                    download(response.headers.location);
-                    return;
-                }
-                response.pipe(file);
-                file.on('finish', () => {
-                    file.close(() => {
-                        fs.chmodSync(dest, '755');
-                        resolve();
+            const file = fs.createWriteStream(dest);
+            const download = (url) => {
+                https.get(url, (response) => {
+                    if (response.statusCode === 302 || response.statusCode === 301) {
+                        download(response.headers.location);
+                        return;
+                    }
+                    if (response.statusCode !== 200) {
+                        reject(new Error(`Failed to download yt-dlp: ${response.statusCode}`));
+                        return;
+                    }
+                    response.pipe(file);
+                    file.on('finish', () => {
+                        file.close(() => {
+                            try {
+                                fs.chmodSync(dest, '755');
+                                resolve();
+                            } catch (e) {
+                                reject(e);
+                            }
+                        });
                     });
+                }).on('error', (err) => {
+                    fs.unlink(dest, () => {});
+                    reject(err);
                 });
-            }).on('error', (err) => {
-                fs.unlink(dest, () => {});
-                reject(err);
-            });
-        };
-        download(downloadUrl);
+            };
+            download(downloadUrl);
+        } catch (e) {
+            reject(e);
+        }
     });
 }
 
@@ -78,6 +90,7 @@ async function initYtdlp() {
         ytDlpWrap = new YTDlpWrap(ytDlpPath);
     } catch (error) {
         console.error('Failed to initialize yt-dlp:', error);
+        throw error; // Re-throw to be caught by the ready handler
     }
 }
 
@@ -100,12 +113,38 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
-    await initYtdlp();
-    createWindow();
-    
-    // Auto-update check after launch
-    if (!isDev) {
-        autoUpdater.checkForUpdatesAndNotify();
+    try {
+        // Initialize paths after app is ready
+        userDataPath = app.getPath('userData');
+        finalDownloadsDir = app.getPath('downloads');
+        tempDownloadsDir = path.join(userDataPath, 'temp_downloads');
+        binDir = path.join(userDataPath, 'bin');
+        ytDlpPath = path.join(binDir, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+
+        if (!fs.existsSync(binDir)) fs.mkdirSync(binDir, { recursive: true });
+        if (!fs.existsSync(tempDownloadsDir)) fs.mkdirSync(tempDownloadsDir, { recursive: true });
+
+        // Register media protocol for local file preview
+        protocol.registerFileProtocol('media', (request, callback) => {
+            const url = request.url.replace('media://', '');
+            try {
+                return callback(decodeURIComponent(url));
+            } catch (error) {
+                console.error(error);
+            }
+        });
+
+        await initYtdlp();
+        createWindow();
+        
+        // Auto-update check after launch
+        if (!isDev) {
+            autoUpdater.checkForUpdatesAndNotify().catch(err => {
+                console.error('Auto-updater error:', err);
+            });
+        }
+    } catch (err) {
+        dialog.showErrorBox('Initialization Error', err.stack || err.message || String(err));
     }
 });
 

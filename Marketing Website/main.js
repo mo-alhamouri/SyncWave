@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Handle download button click
     const downloadBtns = document.querySelectorAll('.download-btn');
-    const RELEASE_VERSION = '1.0.3';
+    const RELEASE_VERSION = '1.0.4';
     const GITHUB_REPO = 'mo-alhamouri/SyncWave';
     
     const getDownloadUrl = async () => {
