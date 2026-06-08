@@ -18,15 +18,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Handle download button click
     const downloadBtns = document.querySelectorAll('.download-btn');
-    const RELEASE_VERSION = '1.0.1';
+    const RELEASE_VERSION = '1.0.2';
     const GITHUB_REPO = 'mo-alhamouri/SyncWave';
     
-    const getDownloadUrl = () => {
+    const getDownloadUrl = async () => {
         const platform = window.navigator.platform.toLowerCase();
+        const userAgent = window.navigator.userAgent.toLowerCase();
         const baseUrl = `https://github.com/${GITHUB_REPO}/releases/download/v${RELEASE_VERSION}`;
         
         if (platform.includes('mac')) {
-            return `${baseUrl}/SyncWave-${RELEASE_VERSION}-arm64.dmg`;
+            // Try to detect Apple Silicon
+            let isAppleSilicon = false;
+            if (window.navigator.userAgentData) {
+                try {
+                    const values = await window.navigator.userAgentData.getHighEntropyValues(['architecture']);
+                    isAppleSilicon = values.architecture === 'arm';
+                } catch (e) {}
+            }
+            
+            // Fallback detection
+            if (!isAppleSilicon && (userAgent.includes('arm64') || userAgent.includes('apple silicon'))) {
+                isAppleSilicon = true;
+            }
+
+            if (isAppleSilicon) {
+                return `${baseUrl}/SyncWave-${RELEASE_VERSION}-arm64.dmg`;
+            } else {
+                // Default to x64 for Intel Macs
+                return `${baseUrl}/SyncWave-${RELEASE_VERSION}-x64.dmg`;
+            }
         } else if (platform.includes('win')) {
             return `${baseUrl}/SyncWave-Setup-${RELEASE_VERSION}.exe`;
         }
@@ -35,9 +55,9 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     downloadBtns.forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            // Let the link navigate if we have an href, otherwise handle it
-            const url = getDownloadUrl();
+        btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const url = await getDownloadUrl();
             window.location.href = url;
         });
     });
