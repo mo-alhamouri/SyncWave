@@ -18,11 +18,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Handle download button click
     const downloadBtns = document.querySelectorAll('.download-btn');
+    const RELEASE_VERSION = '1.0.1';
+    const GITHUB_REPO = 'mo-alhamouri/SyncWave';
+    
+    const getDownloadUrl = () => {
+        const platform = window.navigator.platform.toLowerCase();
+        const baseUrl = `https://github.com/${GITHUB_REPO}/releases/download/v${RELEASE_VERSION}`;
+        
+        if (platform.includes('mac')) {
+            return `${baseUrl}/SyncWave-${RELEASE_VERSION}.dmg`;
+        } else if (platform.includes('win')) {
+            return `${baseUrl}/SyncWave-Setup-${RELEASE_VERSION}.exe`;
+        }
+        // Default to releases page if platform not detected
+        return `https://github.com/${GITHUB_REPO}/releases/tag/v${RELEASE_VERSION}`;
+    };
+
     downloadBtns.forEach(btn => {
         btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            // Placeholder for actual download link
-            alert('SyncWave Download Starting... (This would link to the actual .dmg or .exe installer)');
+            // Let the link navigate if we have an href, otherwise handle it
+            const url = getDownloadUrl();
+            window.location.href = url;
         });
     });
 
