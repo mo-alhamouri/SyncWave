@@ -32,6 +32,9 @@ jobs:
           npm run setup:backend
           npm run setup:frontend
 
+      - name: Build frontend
+        run: npm run build:frontend
+
       - name: Build and Release Electron App
         uses: samuelmeuli/action-electron-builder@v1
         with:
