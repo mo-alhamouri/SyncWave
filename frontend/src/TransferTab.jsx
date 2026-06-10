@@ -73,43 +73,56 @@ const TransferTab = () => {
   const loadInitialLocalFiles = useCallback(async (path = '') => {
     if (window.electron) {
       setLoading(true);
-      const files = await window.electron.listFiles(path, null);
-      if (!files.error) {
-        setLocalState({
-          columns: [{ path: path, files, selectedNames: [] }],
-          currentPath: path
-        });
+      try {
+        const files = await window.electron.listFiles(path, null);
+        if (files.error) {
+          setError('Local Access Error: ' + files.error);
+        } else {
+          setLocalState({
+            columns: [{ path: path, files, selectedNames: [] }],
+            currentPath: path
+          });
+        }
+      } catch (err) {
+        setError('Local System Error: ' + err.message);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     refreshDevices();
     loadInitialLocalFiles('');
-  }, []);
+  }, [loadInitialLocalFiles]);
 
   useEffect(() => {
     if (selectedDevice) {
       const initDevice = async () => {
         setLoading(true);
-        const files = await window.electron.listFiles('/sdcard', selectedDevice);
-        if (!files.error) {
-          setDeviceState({
-            columns: [{ path: '/sdcard', files, selectedNames: [] }],
-            currentPath: '/sdcard'
-          });
-          fetchMobilePreviews(files, selectedDevice);
-        } else {
+        setError('');
+        try {
+          const files = await window.electron.listFiles('/sdcard', selectedDevice);
+          if (!files.error) {
+            setDeviceState({
+              columns: [{ path: '/sdcard', files, selectedNames: [] }],
+              currentPath: '/sdcard'
+            });
+            fetchMobilePreviews(files, selectedDevice);
+          } else {
             setError('Android Access Error: ' + files.error);
+          }
+        } catch (err) {
+          setError('Android System Error: ' + err.message);
+        } finally {
+          setLoading(false);
         }
-        setLoading(false);
       };
       initDevice();
     } else {
         setDeviceState({ columns: [], currentPath: '/sdcard' });
     }
-  }, [selectedDevice]);
+  }, [selectedDevice, fetchMobilePreviews]);
 
   // Global Keyboard Listener
   useEffect(() => {

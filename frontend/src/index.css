@@ -404,10 +404,67 @@ body {
 }
 
 
-.spinner { width: 22px; height: 22px; border: 3px solid rgba(255,255,255,0.2); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.success-banner.padded { margin-top: 2rem; }
 
-/* Mobile Transfer Feature Styles */
+.stop-button-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.5rem;
+}
+
+.stop-button-stylish {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  padding: 0.6rem 1.5rem;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.stop-button-stylish:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
+  color: white;
+  transform: translateY(-1px);
+}
+
+/* Toast Notification */
+.toast-notification {
+  position: fixed;
+  top: 2rem;
+  right: 2rem;
+  z-index: 9999;
+  background: rgba(13, 17, 28, 0.9);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--panel-border);
+  padding: 1rem 1.5rem;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.toast-notification.error { border-left: 4px solid var(--error); }
+.toast-notification.success { border-left: 4px solid var(--success); }
+
+.toast-content { display: flex; align-items: center; gap: 0.8rem; }
+.toast-content span { font-weight: 600; font-size: 0.95rem; }
+.toast-close { background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; }
+
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 .transfer-layout { display: flex; gap: 1.2rem; height: 640px; }
 .file-explorer-section { flex: 1; display: flex; flex-direction: column; background: rgba(0, 0, 0, 0.25); border-radius: 20px; border: 1px solid var(--panel-border); overflow: hidden; position: relative; }
 .explorer-header { padding: 1rem; background: rgba(255, 255, 255, 0.04); border-bottom: 1px solid var(--panel-border); display: flex; flex-direction: column; gap: 0.8rem; }

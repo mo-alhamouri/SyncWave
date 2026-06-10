@@ -243,13 +243,23 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
         let args = [url, '-o', outputTemplate];
         
         if (format === 'mp3-320') args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
-        else if (format === '4k') args.push('-f', 'bestvideo[height<=2160]+bestaudio/best');
-        else if (format === '1080p') args.push('-f', 'bestvideo[height<=1080]+bestaudio/best');
-        else if (format === '720p') args.push('-f', 'bestvideo[height<=720]+bestaudio/best');
+        else if (format === '4k') args.push('-f', 'bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=2160]+bestaudio/best');
+        else if (format === '1080p') args.push('-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best');
+        else if (format === '720p') args.push('-f', 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best');
 
         if (startTime || endTime) {
             args.push('--download-sections', `*${startTime || 0}-${endTime || 'inf'}`);
+            // Use --force-keyframes-at-cuts for more precise trimming during download
+            args.push('--force-keyframes-at-cuts');
         }
+
+        // Fix: Explicitly provide FFmpeg location to yt-dlp
+        if (ffmpeg && ffmpeg.path) {
+            args.push('--ffmpeg-location', ffmpeg.path);
+        }
+
+        // Fix: Use node as the JS runtime if available
+        args.push('--js-runtimes', 'node');
 
         const downloader = ytDlpWrap.exec(args);
         currentDownloadProcess = downloader;

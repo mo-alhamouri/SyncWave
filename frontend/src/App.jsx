@@ -60,6 +60,7 @@ function App() {
   const [downloadMsg, setDownloadMsg] = useState('');
   const [isPlaying, setIsPlaying] = useState(false);
   const [dragging, setDragging] = useState(null);
+  const [toast, setToast] = useState(null);
 
   // Playlist states
   const [selectedItemIds, setSelectedItemIds] = useState({});
@@ -67,6 +68,12 @@ function App() {
   const [queue, setQueue] = useState([]);
   const [queueIndex, setQueueIndex] = useState(0);
   const [queueActive, setQueueActive] = useState(false);
+
+  // Toast Helper
+  const showToast = (message, type = 'error') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 5000);
+  };
 
   const filteredPlaylistEntries = metadata?.isPlaylist 
     ? metadata.entries.filter(item => item.title.toLowerCase().includes(playlistSearch.toLowerCase()))
@@ -159,6 +166,7 @@ function App() {
         setLocalFile(file);
         setTrimSuccess(false);
         setStartTime(0);
+        setEndTime(0); // Will be set by metadata load
         setWaveform([]);
       }
     }
@@ -170,14 +178,15 @@ function App() {
     setError('');
     
     try {
-      const result = await window.electron.trimLocalFile(localFile.path, format === 'mp3-320' ? 'mp3' : 'mp4', startTime, endTime);
+      const formatToUse = format === 'mp4-high' ? 'mp4' : 'mp3';
+      const result = await window.electron.trimLocalFile(localFile.path, formatToUse, startTime, endTime);
       if (result.success) {
         setTrimSuccess(true);
       } else {
         throw new Error(result.error);
       }
     } catch (err) {
-      setError(err.message || 'Trimming failed');
+      showToast(err.message || 'Trimming failed');
     } finally {
       setTrimmerLoading(false);
     }
@@ -209,6 +218,17 @@ function App() {
       } else {
         localPlayerRef.current.currentTime = startTime;
         localPlayerRef.current.play();
+        
+        // Auto-pause when reaching endTime
+        const checkTime = () => {
+          if (localPlayerRef.current && localPlayerRef.current.currentTime >= endTime) {
+             localPlayerRef.current.pause();
+             setIsPlaying(false);
+          } else if (localPlayerRef.current && !localPlayerRef.current.paused) {
+             requestAnimationFrame(checkTime);
+          }
+        };
+        requestAnimationFrame(checkTime);
       }
       setIsPlaying(!isPlaying);
     }
@@ -263,12 +283,14 @@ function App() {
 
         await new Promise(r => setTimeout(r, 600));
         setMetadata(data);
+        setStartTime(0);
+        setEndTime(data.duration || 0);
         setDownloadState('idle');
         setDownloadPercent(0);
       }
     } catch (err) {
       console.error(err);
-      setError(err.message || 'Error occurred while loading details.');
+      showToast(err.message || 'Error occurred while loading details.');
       setDownloadState('idle');
     } finally {
       setLoading(false);
@@ -333,7 +355,7 @@ function App() {
 
       const removeErrorListener = window.electron.onDownloadError((data) => {
         cleanup();
-        setError(data.error);
+        showToast(data.error);
         updatedQueue[index].status = 'error';
         setQueue([...updatedQueue]);
         setTimeout(() => processQueueItem(index + 1, updatedQueue), 1500);
@@ -382,7 +404,7 @@ function App() {
       const removeErrorListener = window.electron.onDownloadError((data) => {
         cleanup();
         setDownloadState('error');
-        setError(data.error || 'Download failed.');
+        showToast(data.error || 'Download failed.');
       });
 
       const cleanup = () => {
@@ -422,6 +444,15 @@ function App() {
 
   return (
     <div className="app-shell">
+      {toast && (
+        <div className={`toast-notification ${toast.type}`}>
+          <div className="toast-content">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span>{toast.message}</span>
+          </div>
+          <button onClick={() => setToast(null)} className="toast-close">&times;</button>
+        </div>
+      )}
       <div className="sidebar">
         <div className="sidebar-drag-area"></div>
         <div className="sidebar-logo">
@@ -461,7 +492,7 @@ function App() {
             className={`nav-item ${activeTab === 'transfer' ? 'active' : ''}`}
             onClick={() => setActiveTab('transfer')}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/><rect x="2" y="17" width="20" height="4" rx="2"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/><rect x="2" y1="17" width="20" height="4" rx="2"/></svg>
             Mobile Transfer
           </button>
         </nav>
@@ -555,20 +586,20 @@ function App() {
                     </div>
                   )}
 
-                  {downloadState === 'idle' && (
-                    <div className="download-actions-row">
-                      <div className="format-picker-elegant">
-                        <span>Format:</span>
-                        <select value={format} onChange={(e) => setFormat(e.target.value)} className="quality-select-inline" disabled={isDownloading}>
-                          <option value="mp3-320">MP3 320kbps</option>
-                          <option value="4k">MP4 4K</option>
-                          <option value="1080p">MP4 1080p</option>
-                          <option value="720p">MP4 720p</option>
-                        </select>
-                      </div>
-                      <button onClick={handleDownload} className="export-trigger-btn-stylish">Start Pro Download</button>
+                  <div className="download-actions-row">
+                    <div className="format-picker-elegant">
+                      <span>Format:</span>
+                      <select value={format} onChange={(e) => setFormat(e.target.value)} className="quality-select-inline" disabled={isDownloading}>
+                        <option value="mp3-320">MP3 320kbps</option>
+                        <option value="4k">MP4 4K</option>
+                        <option value="1080p">MP4 1080p</option>
+                        <option value="720p">MP4 720p</option>
+                      </select>
                     </div>
-                  )}
+                    {downloadState === 'idle' && (
+                      <button onClick={handleDownload} className="export-trigger-btn-stylish">Start Pro Download</button>
+                    )}
+                  </div>
 
                   {isDownloading && (
                     <div className="progress-panel">
@@ -577,12 +608,14 @@ function App() {
                         <span className="progress-pct">{downloadPercent}%</span>
                       </div>
                       <div className="progress-bar-bg"><div className="progress-bar-fill" style={{ width: `${downloadPercent}%` }}></div></div>
-                      <button onClick={handleStopQueue} className="stop-button">Stop Process</button>
+                      <div className="stop-button-container">
+                        <button onClick={handleStopQueue} className="stop-button-stylish">Stop Process</button>
+                      </div>
                     </div>
                   )}
                   
                   {downloadState === 'completed' && (
-                    <div className="success-banner">✨ Download Complete! Saved to your folder.</div>
+                    <div className="success-banner padded">✨ Download Complete! Saved to your folder.</div>
                   )}
                 </div>
               )}
@@ -619,7 +652,9 @@ function App() {
                         src={`media://${localFile.path}`}
                         onLoadedMetadata={(e) => {
                           setLocalDuration(e.target.duration);
-                          setEndTime(e.target.duration);
+                          if (endTime === 0 || endTime > e.target.duration) {
+                             setEndTime(e.target.duration);
+                          }
                         }}
                         className="local-preview-player"
                         controls
@@ -638,7 +673,7 @@ function App() {
                         </select>
                       </div>
                       <div className="trim-primary-actions">
-                        <button onClick={() => setLocalFile(null)} className="btn-secondary-stylish">Change File</button>
+                        <button onClick={() => { setLocalFile(null); setEndTime(0); }} className="btn-secondary-stylish">Change File</button>
                         <button 
                           onClick={handleLocalTrim} 
                           className="export-trigger-btn-stylish" 
@@ -692,7 +727,7 @@ function App() {
                   </div>
 
                   {trimSuccess && (
-                    <div className="success-banner">✨ Clip Exported! Saved to your Downloads folder.</div>
+                    <div className="success-banner padded">✨ Clip Exported! Saved to your folder.</div>
                   )}
                 </div>
               )}
