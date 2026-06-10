@@ -396,11 +396,27 @@ body {
   margin-right: 1.5rem;
 }
 
+.download-primary-actions {
+  display: flex;
+  gap: 1rem;
+}
+
+.format-picker-elegant {
+  margin-bottom: 1.5rem; /* Add padding below format selection */
+}
+
 .download-actions-row {
   display: flex;
-  align-items: center;
+  align-items: flex-end; /* Align actions to the bottom of the row */
   justify-content: space-between;
-  margin-top: 2.5rem;
+  margin-top: 2rem;
+}
+
+.trim-primary-actions-full {
+  display: flex;
+  gap: 1rem;
+  width: 100%;
+  justify-content: flex-end;
 }
 
 

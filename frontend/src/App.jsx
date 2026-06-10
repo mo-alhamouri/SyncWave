@@ -178,8 +178,9 @@ function App() {
     setError('');
     
     try {
-      const formatToUse = format === 'mp4-high' ? 'mp4' : 'mp3';
-      const result = await window.electron.trimLocalFile(localFile.path, formatToUse, startTime, endTime);
+      // MAINTAIN ORIGINAL FORMAT
+      const ext = localFile.name.split('.').pop().toLowerCase();
+      const result = await window.electron.trimLocalFile(localFile.path, ext, startTime, endTime);
       if (result.success) {
         setTrimSuccess(true);
       } else {
@@ -215,22 +216,28 @@ function App() {
     } else if (activeTab === 'trimmer' && localPlayerRef.current) {
       if (isPlaying) {
         localPlayerRef.current.pause();
+        setIsPlaying(false);
       } else {
+        // PLAY SELECTION
         localPlayerRef.current.currentTime = startTime;
-        localPlayerRef.current.play();
+        localPlayerRef.current.play().catch(e => console.error('Play failed:', e));
+        setIsPlaying(true);
         
-        // Auto-pause when reaching endTime
         const checkTime = () => {
-          if (localPlayerRef.current && localPlayerRef.current.currentTime >= endTime) {
-             localPlayerRef.current.pause();
+          if (localPlayerRef.current && !localPlayerRef.current.paused) {
+             if (localPlayerRef.current.currentTime >= endTime) {
+                localPlayerRef.current.pause();
+                localPlayerRef.current.currentTime = startTime;
+                setIsPlaying(false);
+             } else {
+                requestAnimationFrame(checkTime);
+             }
+          } else {
              setIsPlaying(false);
-          } else if (localPlayerRef.current && !localPlayerRef.current.paused) {
-             requestAnimationFrame(checkTime);
           }
         };
         requestAnimationFrame(checkTime);
       }
-      setIsPlaying(!isPlaying);
     }
   };
 
@@ -596,9 +603,14 @@ function App() {
                         <option value="720p">MP4 720p</option>
                       </select>
                     </div>
-                    {downloadState === 'idle' && (
-                      <button onClick={handleDownload} className="export-trigger-btn-stylish">Start Pro Download</button>
-                    )}
+                    <div className="download-primary-actions">
+                      {downloadState === 'idle' && (
+                        <button onClick={handleDownload} className="export-trigger-btn-stylish">Start Pro Download</button>
+                      )}
+                      {isDownloading && (
+                        <button onClick={handleStopQueue} className="stop-button-stylish">Stop Process</button>
+                      )}
+                    </div>
                   </div>
 
                   {isDownloading && (
@@ -608,9 +620,6 @@ function App() {
                         <span className="progress-pct">{downloadPercent}%</span>
                       </div>
                       <div className="progress-bar-bg"><div className="progress-bar-fill" style={{ width: `${downloadPercent}%` }}></div></div>
-                      <div className="stop-button-container">
-                        <button onClick={handleStopQueue} className="stop-button-stylish">Stop Process</button>
-                      </div>
                     </div>
                   )}
                   
@@ -665,15 +674,8 @@ function App() {
                   <div className="trimmer-info">
                     <h3 className="video-title">{localFile.name}</h3>
                     <div className="trim-actions-row">
-                      <div className="format-picker-elegant">
-                        <span>Format:</span>
-                        <select value={format} onChange={(e) => setFormat(e.target.value)} className="quality-select-inline">
-                          <option value="mp3-320">MP3 Studio Audio</option>
-                          <option value="mp4-high">MP4 High Quality</option>
-                        </select>
-                      </div>
-                      <div className="trim-primary-actions">
-                        <button onClick={() => { setLocalFile(null); setEndTime(0); }} className="btn-secondary-stylish">Change File</button>
+                      <div className="trim-primary-actions-full">
+                        <button onClick={() => { setLocalFile(null); setEndTime(0); setStartTime(0); }} className="btn-secondary-stylish">Change File</button>
                         <button 
                           onClick={handleLocalTrim} 
                           className="export-trigger-btn-stylish" 

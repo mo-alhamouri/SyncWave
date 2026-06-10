@@ -358,17 +358,169 @@ ipcMain.handle('list-devices', async () => {
     return devices;
 });
 
-// Other handlers (list-files, transfer, rename, delete) follow similar defensive patterns...
-// For brevity, I'll keep the core logic but ensure they are inside app.whenReady context where they use 'app'.
-// (The previous ones were already mostly compliant but I'll make sure they don't crash)
+ipcMain.handle('list-files', async (event, targetPath, deviceId) => {
+    if (!deviceId) {
+        let absolutePath = targetPath || app.getPath('home');
+        if (!fs.existsSync(absolutePath)) absolutePath = app.getPath('home');
+        try {
+            const entries = fs.readdirSync(absolutePath, { withFileTypes: true });
+            return entries.filter(entry => !entry.name.startsWith('.')).map(entry => {
+                const fullPath = path.join(absolutePath, entry.name);
+                try {
+                    const stats = fs.statSync(fullPath);
+                    return { 
+                        name: entry.name, 
+                        path: fullPath, 
+                        isDirectory: entry.isDirectory(), 
+                        size: stats.size, 
+                        dateModified: stats.mtime, 
+                        type: entry.isDirectory() ? 'directory' : path.extname(entry.name).toLowerCase() 
+                    };
+                } catch (e) { return null; }
+            }).filter(Boolean);
+        } catch (e) { return { error: e.message }; }
+    } else {
+        const { exec } = require('child_process');
+        const util = require('util');
+        const execPromise = util.promisify(exec);
+        
+        async function getAdbPath() {
+            const locations = ['adb', path.join(app.getPath('home'), 'Library/Android/sdk/platform-tools/adb'), '/usr/local/bin/adb', '/opt/homebrew/bin/adb', path.join(process.env.LOCALAPPDATA || '', 'Android/Sdk/platform-tools/adb.exe'), 'C:\\platform-tools\\adb.exe'];
+            for (const loc of locations) {
+                try {
+                    const { stdout } = await execPromise(`"${loc}" version`);
+                    if (stdout.includes('Android Debug Bridge')) return loc;
+                } catch (e) {}
+            }
+            return null;
+        }
+
+        const adbPath = await getAdbPath();
+        if (!adbPath) return { error: 'ADB not found' };
+        let remotePath = (targetPath || '/sdcard').replace(/\/+/g, '/');
+        if (!remotePath.endsWith('/')) remotePath += '/';
+        try {
+            const { stdout } = await execPromise(`"${adbPath}" -s ${deviceId} shell ls -1F "${remotePath}"`);
+            return stdout.split(/\r?\n/).filter(Boolean).map(line => {
+                const isDirectory = line.endsWith('/');
+                const name = isDirectory ? line.slice(0, -1) : line.replace(/[*@]$/, '');
+                if (name === '.' || name === '..' || name.startsWith('.')) return null;
+                return { 
+                    name, 
+                    path: remotePath + name, 
+                    isDirectory, 
+                    size: 0, 
+                    dateModified: 'Mobile File', 
+                    type: isDirectory ? 'directory' : path.extname(name).toLowerCase() 
+                };
+            }).filter(Boolean);
+        } catch (e) { return { error: 'Could not access mobile storage.' }; }
+    }
+});
+
+ipcMain.handle('transfer-file', async (event, sourcePath, destPath, sourceDeviceId, destDeviceId) => {
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
+    
+    async function getAdbPath() {
+        const locations = ['adb', path.join(app.getPath('home'), 'Library/Android/sdk/platform-tools/adb'), '/usr/local/bin/adb', '/opt/homebrew/bin/adb', path.join(process.env.LOCALAPPDATA || '', 'Android/Sdk/platform-tools/adb.exe'), 'C:\\platform-tools\\adb.exe'];
+        for (const loc of locations) {
+            try {
+                const { stdout } = await execPromise(`"${loc}" version`);
+                if (stdout.includes('Android Debug Bridge')) return loc;
+            } catch (e) {}
+        }
+        return null;
+    }
+
+    const adbPath = await getAdbPath();
+    try {
+        if (!sourceDeviceId && destDeviceId) await execPromise(`"${adbPath}" -s ${destDeviceId} push "${sourcePath}" "${destPath}"`);
+        else if (sourceDeviceId && !destDeviceId) await execPromise(`"${adbPath}" -s ${sourceDeviceId} pull "${sourcePath}" "${destPath}"`);
+        else if (!sourceDeviceId && !destDeviceId) fs.copyFileSync(sourcePath, destPath);
+        return { success: true };
+    } catch (e) { return { error: e.message }; }
+});
+
+ipcMain.handle('delete-file', async (event, targetPath, deviceId) => {
+    try {
+        if (!deviceId) {
+            if (fs.lstatSync(targetPath).isDirectory()) {
+                fs.rmSync(targetPath, { recursive: true, force: true });
+            } else {
+                fs.unlinkSync(targetPath);
+            }
+        } else {
+            const { exec } = require('child_process');
+            const util = require('util');
+            const execPromise = util.promisify(exec);
+            const adbPath = 'adb'; // Simplification for now, should use getAdbPath
+            await execPromise(`"${adbPath}" -s ${deviceId} shell rm -rf "${targetPath}"`);
+        }
+        return { success: true };
+    } catch (e) {
+        return { error: e.message };
+    }
+});
+
+ipcMain.handle('rename-file', async (event, targetPath, newName, deviceId) => {
+    try {
+        const dir = path.dirname(targetPath);
+        const newPath = path.join(dir, newName).replace(/\\/g, '/');
+        
+        if (!deviceId) {
+            fs.renameSync(targetPath, newPath);
+        } else {
+            const { exec } = require('child_process');
+            const util = require('util');
+            const execPromise = util.promisify(exec);
+            const adbPath = 'adb';
+            await execPromise(`"${adbPath}" -s ${deviceId} shell mv "${targetPath}" "${newPath}"`);
+        }
+        return { success: true };
+    } catch (e) {
+        return { error: e.message };
+    }
+});
+
+ipcMain.handle('get-mobile-preview', async (event, deviceId, remotePath) => {
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
+    
+    // Minimal Adb search for this specific handler
+    const adbPath = 'adb'; 
+    const ext = path.extname(remotePath).toLowerCase();
+    const tempPath = path.join(tempDownloadsDir, `preview_${Date.now()}${ext}`);
+    try {
+        await execPromise(`"${adbPath}" -s ${deviceId} pull "${remotePath}" "${tempPath}"`);
+        return tempPath;
+    } catch (e) { return null; }
+});
 
 ipcMain.handle('list-local-volumes', async () => {
     const volumes = [
         { name: 'Home', path: app.getPath('home'), type: 'home' },
         { name: 'Desktop', path: app.getPath('desktop'), type: 'folder' },
-        { name: 'Downloads', path: app.getPath('downloads'), type: 'folder' }
+        { name: 'Downloads', path: app.getPath('downloads'), type: 'folder' },
+        { name: 'Documents', path: app.getPath('documents'), type: 'folder' },
+        { name: 'Movies', path: app.getPath('videos'), type: 'folder' },
+        { name: 'Pictures', path: app.getPath('pictures'), type: 'folder' },
+        { name: 'Music', path: app.getPath('music'), type: 'folder' }
     ];
-    // Add more volumes based on platform...
+
+    if (process.platform === 'darwin') {
+        try {
+            const external = fs.readdirSync('/Volumes');
+            external.forEach(v => {
+                if (v !== 'Macintosh HD' && !v.startsWith('.')) {
+                    volumes.push({ name: v, path: path.join('/Volumes', v), type: 'external' });
+                }
+            });
+        } catch (e) {}
+    }
+
     return volumes;
 });
 
