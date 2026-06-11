@@ -1,6 +1,6 @@
 {
   "name": "syncwave-desktop",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "main": "electron/main.js",
   "scripts": {
     "setup": "npm install && npm run setup:backend && npm run setup:frontend",
@@ -33,6 +33,10 @@
       "!backend/node_modules/**/*",
       "!backend/downloads/**/*"
     ],
+    "asarUnpack": [
+      "**/node_modules/@ffmpeg-installer/**/*",
+      "**/node_modules/@ffprobe-installer/**/*"
+    ],
     "mac": {
       "category": "public.app-category.utilities",
       "target": [
@@ -60,6 +64,7 @@
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^2.1.2",
     "electron-is-dev": "^2.0.0",
     "electron-updater": "^6.1.7",
     "fix-path": "^3.0.0",

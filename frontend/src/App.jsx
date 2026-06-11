@@ -47,6 +47,7 @@ function App() {
   const activeEventSource = useRef(null);
   const playerRef = useRef(null);
   const localPlayerRef = useRef(null);
+  const hiddenAudioRef = useRef(null);
   const inputRef = useRef(null);
   const spectrumRef = useRef(null);
   
@@ -166,7 +167,8 @@ function App() {
         setLocalFile(file);
         setTrimSuccess(false);
         setStartTime(0);
-        setEndTime(0); // Will be set by metadata load
+        setEndTime(0);
+        setLocalDuration(0);
         setWaveform([]);
       }
     }
@@ -199,8 +201,9 @@ function App() {
         JSON.stringify({ event: 'command', func: 'seekTo', args: [time, true] }),
         '*'
       );
-    } else if (activeTab === 'trimmer' && localPlayerRef.current) {
-      localPlayerRef.current.currentTime = time;
+    } else if (activeTab === 'trimmer') {
+       const player = localFile?.name.match(/\.(mp3|wav|ogg|flac|m4a)$/i) ? hiddenAudioRef.current : localPlayerRef.current;
+       if (player) player.currentTime = time;
     }
   };
 
@@ -213,21 +216,25 @@ function App() {
         '*'
       );
       setIsPlaying(!isPlaying);
-    } else if (activeTab === 'trimmer' && localPlayerRef.current) {
+    } else if (activeTab === 'trimmer') {
+      const currentPlayer = localFile?.name.match(/\.(mp3|wav|ogg|flac|m4a)$/i) ? hiddenAudioRef.current : localPlayerRef.current;
+      
+      if (!currentPlayer) return;
+
       if (isPlaying) {
-        localPlayerRef.current.pause();
+        currentPlayer.pause();
         setIsPlaying(false);
       } else {
         // PLAY SELECTION
-        localPlayerRef.current.currentTime = startTime;
-        localPlayerRef.current.play().catch(e => console.error('Play failed:', e));
+        currentPlayer.currentTime = startTime;
+        currentPlayer.play().catch(e => console.error('Play failed:', e));
         setIsPlaying(true);
         
         const checkTime = () => {
-          if (localPlayerRef.current && !localPlayerRef.current.paused) {
-             if (localPlayerRef.current.currentTime >= endTime) {
-                localPlayerRef.current.pause();
-                localPlayerRef.current.currentTime = startTime;
+          if (currentPlayer && !currentPlayer.paused) {
+             if (currentPlayer.currentTime >= endTime) {
+                currentPlayer.pause();
+                currentPlayer.currentTime = startTime;
                 setIsPlaying(false);
              } else {
                 requestAnimationFrame(checkTime);
@@ -266,15 +273,15 @@ function App() {
     setMetadata(null);
     setDownloadState('started');
     setDownloadPercent(0);
-    setDownloadMsg('Initializing Engine (10%)...');
+    setDownloadMsg('Initializing Engine...');
 
     try {
       if (window.electron && window.electron.getInfo) {
         setDownloadPercent(25);
-        setDownloadMsg('Securing Connection (25%)...');
+        setDownloadMsg('Securing Connection...');
         await new Promise(r => setTimeout(r, 400));
         setDownloadPercent(45);
-        setDownloadMsg('Analyzing Metadata (45%)...');
+        setDownloadMsg('Analyzing Metadata...');
 
         const data = await window.electron.getInfo(url.trim());
         if (data.error) throw new Error(data.error);
@@ -383,7 +390,7 @@ function App() {
 
     setDownloadState('started');
     setDownloadPercent(5);
-    setDownloadMsg('Initializing Engine (5%)...');
+    setDownloadMsg('Initializing Engine...');
     
     if (window.electron && window.electron.download) {
       window.electron.download(url.trim(), format);
@@ -397,7 +404,7 @@ function App() {
           setDownloadState('downloading');
           const progress = Math.max(10, Math.floor(data.percent || 0));
           setDownloadPercent(progress);
-          setDownloadMsg('Downloading Streams from YouTube...');
+          setDownloadMsg('Downloading Streams...');
         }
       });
 
@@ -649,8 +656,17 @@ function App() {
               ) : (
                 <div className="trimmer-workspace">
                   <div className="trimmer-media-preview">
-                    {localFile.name.endsWith('.mp3') || localFile.name.endsWith('.wav') ? (
+                    {localFile.name.match(/\.(mp3|wav|ogg|flac|m4a)$/i) ? (
                       <div className="audio-placeholder-pro">
+                        <audio 
+                          ref={hiddenAudioRef}
+                          src={`media://${localFile.path}`}
+                          onLoadedMetadata={(e) => {
+                            setLocalDuration(e.target.duration);
+                            setEndTime(e.target.duration);
+                            setStartTime(0);
+                          }}
+                        />
                         <div className="audio-viz-bars">
                           {[...Array(12)].map((_, i) => <div key={i} className="viz-bar"></div>)}
                         </div>
@@ -661,9 +677,8 @@ function App() {
                         src={`media://${localFile.path}`}
                         onLoadedMetadata={(e) => {
                           setLocalDuration(e.target.duration);
-                          if (endTime === 0 || endTime > e.target.duration) {
-                             setEndTime(e.target.duration);
-                          }
+                          setEndTime(e.target.duration);
+                          setStartTime(0);
                         }}
                         className="local-preview-player"
                         controls

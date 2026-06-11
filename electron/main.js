@@ -3,52 +3,41 @@ const path = require('path');
 const fs = require('fs');
 
 // 1. ABSOLUTE TOP-LEVEL ERROR HANDLING
-// We set this up before anything else can fail.
 function reportError(title, error) {
     const message = error instanceof Error ? 
         `${error.message}\n\nStack:\n${error.stack}` : 
         `Non-Error thrown: ${JSON.stringify(error) || String(error)}`;
     
     console.error(title, error);
-    
-    // Fallback if dialog isn't ready
     if (dialog && dialog.showErrorBox) {
         dialog.showErrorBox(title, message);
-    } else {
-        console.error('CRITICAL: Dialog not available to show error.');
     }
 }
 
 process.on('uncaughtException', (error) => reportError('SyncWave Uncaught Exception', error));
 process.on('unhandledRejection', (reason) => reportError('SyncWave Unhandled Rejection', reason));
 
-// 2. DEFENSIVE REQUIRES & STATE
 let isDev = false;
 try {
-    // Prefer native app.isPackaged over electron-is-dev for stability
     isDev = !app.isPackaged;
 } catch (e) {
-    console.warn('Could not determine isDev state, defaulting to false');
+    isDev = false;
 }
 
-// Lazy-loaded dependencies to prevent startup crashes
+// Lazy-loaded dependencies
 let autoUpdater;
 let ffmpeg;
+let ffprobe;
 let YTDlpWrap;
 let fixPath;
 let ytDlpWrap = null;
 
-// Paths (initialized in app.whenReady)
 let userDataPath, finalDownloadsDir, tempDownloadsDir, binDir, ytDlpPath;
 let mainWindow = null;
 let currentDownloadProcess = null;
 
-// 3. APP INITIALIZATION
 app.whenReady().then(async () => {
     try {
-        console.log('App ready, starting initialization...');
-
-        // Initialize Paths
         userDataPath = app.getPath('userData');
         finalDownloadsDir = app.getPath('downloads');
         tempDownloadsDir = path.join(userDataPath, 'temp_downloads');
@@ -58,27 +47,30 @@ app.whenReady().then(async () => {
         if (!fs.existsSync(binDir)) fs.mkdirSync(binDir, { recursive: true });
         if (!fs.existsSync(tempDownloadsDir)) fs.mkdirSync(tempDownloadsDir, { recursive: true });
 
-        // Load non-core dependencies safely
         try {
             fixPath = require('fix-path');
             fixPath();
-        } catch (e) { console.error('fix-path failed:', e); }
+        } catch (e) {}
 
         try {
             const updaterModule = require('electron-updater');
             autoUpdater = updaterModule.autoUpdater;
-        } catch (e) { console.error('auto-updater load failed:', e); }
+        } catch (e) {}
 
         try {
+            // Load both ffmpeg and ffprobe
             ffmpeg = require('@ffmpeg-installer/ffmpeg');
-        } catch (e) { console.error('ffmpeg-installer load failed:', e); }
+            ffprobe = require('@ffprobe-installer/ffprobe');
+            
+            // Fix: In production, we might need to point to the unpacked binary
+            // electron-builder's asar.unpack handles this.
+        } catch (e) { console.error('FFmpeg/FFprobe load failed:', e); }
 
         try {
             const wrapModule = require('yt-dlp-wrap');
             YTDlpWrap = wrapModule.default || wrapModule;
         } catch (e) { reportError('Dependency Load Error (yt-dlp-wrap)', e); }
 
-        // Register media protocol
         protocol.registerFileProtocol('media', (request, callback) => {
             const url = request.url.replace('media://', '');
             try {
@@ -88,13 +80,9 @@ app.whenReady().then(async () => {
             }
         });
 
-        // Initialize yt-dlp binary
         await initYtdlp();
-
-        // Create UI
         createWindow();
 
-        // Check for updates
         if (!isDev && autoUpdater) {
             autoUpdater.checkForUpdatesAndNotify().catch(e => console.error('Update check failed:', e));
             setupUpdaterEvents();
@@ -105,13 +93,10 @@ app.whenReady().then(async () => {
     }
 });
 
-// --- HELPER FUNCTIONS ---
-
 async function initYtdlp() {
     if (!YTDlpWrap) return;
     try {
         if (!fs.existsSync(ytDlpPath)) {
-            console.log('yt-dlp missing, downloading...');
             await downloadStandaloneYtdlp(ytDlpPath);
         }
         ytDlpWrap = new YTDlpWrap(ytDlpPath);
@@ -135,7 +120,6 @@ function createWindow() {
 
     if (isDev) {
         mainWindow.loadURL('http://localhost:5173').catch(e => {
-            console.error('Failed to load dev URL:', e);
             mainWindow.loadFile(path.join(__dirname, '../frontend/dist/index.html'));
         });
     } else {
@@ -193,8 +177,6 @@ function setupUpdaterEvents() {
     });
 }
 
-// --- IPC HANDLERS ---
-
 ipcMain.on('quit-and-install', () => {
     if (autoUpdater) autoUpdater.quitAndInstall();
 });
@@ -242,23 +224,28 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
         const outputTemplate = path.join(tempDownloadsDir, `%(title)s.%(ext)s`);
         let args = [url, '-o', outputTemplate];
         
-        if (format === 'mp3-320') args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
-        else if (format === '4k') args.push('-f', 'bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=2160]+bestaudio/best');
-        else if (format === '1080p') args.push('-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best');
-        else if (format === '720p') args.push('-f', 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best');
+        // Ensure we merge into mp4 by default for videos
+        args.push('--merge-output-format', 'mp4');
+
+        if (format === 'mp3-320') {
+            // Overwrite args for audio only
+            args = [url, '-o', outputTemplate, '-x', '--audio-format', 'mp3', '--audio-quality', '0'];
+        }
+        else if (format === '4k') args.push('-f', 'bestvideo[height<=2160]+bestaudio/best');
+        else if (format === '1080p') args.push('-f', 'bestvideo[height<=1080]+bestaudio/best');
+        else if (format === '720p') args.push('-f', 'bestvideo[height<=720]+bestaudio/best');
 
         if (startTime || endTime) {
             args.push('--download-sections', `*${startTime || 0}-${endTime || 'inf'}`);
-            // Use --force-keyframes-at-cuts for more precise trimming during download
             args.push('--force-keyframes-at-cuts');
         }
 
-        // Fix: Explicitly provide FFmpeg location to yt-dlp
+        // IMPORTANT: Provide the directory containing both ffmpeg and ffprobe
         if (ffmpeg && ffmpeg.path) {
-            args.push('--ffmpeg-location', ffmpeg.path);
+            const ffmpegDir = path.dirname(ffmpeg.path);
+            args.push('--ffmpeg-location', ffmpegDir);
         }
 
-        // Fix: Use node as the JS runtime if available
         args.push('--js-runtimes', 'node');
 
         const downloader = ytDlpWrap.exec(args);
@@ -307,14 +294,20 @@ ipcMain.handle('select-file', async () => {
 
 ipcMain.handle('trim-local-file', async (event, filePath, format, startTime, endTime) => {
     const { spawn } = require('child_process');
-    const outputName = `trimmed_${Date.now()}.${format.startsWith('mp3') ? 'mp3' : 'mp4'}`;
+    // Ensure format is just the extension
+    const ext = format.toLowerCase().includes('mp3') ? 'mp3' : 'mp4';
+    const outputName = `trimmed_${Date.now()}.${ext}`;
     const outputPath = path.join(finalDownloadsDir, outputName);
     
     return new Promise((resolve) => {
         if (!ffmpeg || !ffmpeg.path) {
             return resolve({ error: 'FFmpeg not available' });
         }
-        let args = ['-i', filePath, '-ss', startTime.toString(), '-to', endTime.toString(), '-c', 'copy', outputPath];
+        
+        // Use -ss before -i for faster seeking, but after -i for more accuracy. 
+        // For 'copy' codec, we need to be careful with keyframes.
+        let args = ['-ss', startTime.toString(), '-to', endTime.toString(), '-i', filePath, '-c', 'copy', outputPath];
+        
         const proc = spawn(ffmpeg.path, args);
         proc.on('close', (code) => {
             if (code === 0) resolve({ success: true, path: outputPath });
@@ -322,40 +315,6 @@ ipcMain.handle('trim-local-file', async (event, filePath, format, startTime, end
         });
         proc.on('error', (err) => resolve({ error: 'FFmpeg spawn error: ' + err.message }));
     });
-});
-
-ipcMain.handle('list-devices', async () => {
-    const { exec } = require('child_process');
-    const util = require('util');
-    const execPromise = util.promisify(exec);
-
-    async function getAdbPath() {
-        const locations = ['adb', path.join(app.getPath('home'), 'Library/Android/sdk/platform-tools/adb'), '/usr/local/bin/adb', '/opt/homebrew/bin/adb', path.join(process.env.LOCALAPPDATA || '', 'Android/Sdk/platform-tools/adb.exe'), 'C:\\platform-tools\\adb.exe'];
-        for (const loc of locations) {
-            try {
-                const { stdout } = await execPromise(`"${loc}" version`);
-                if (stdout.includes('Android Debug Bridge')) return loc;
-            } catch (e) {}
-        }
-        return null;
-    }
-
-    const adbPath = await getAdbPath();
-    const devices = [];
-    if (adbPath) {
-        try {
-            await execPromise(`"${adbPath}" start-server`);
-            const { stdout } = await execPromise(`"${adbPath}" devices`);
-            const lines = stdout.split('\n');
-            for (let i = 1; i < lines.length; i++) {
-                const parts = lines[i].trim().split(/\s+/);
-                if (parts.length >= 2 && parts[1] === 'device') {
-                    devices.push({ id: parts[0], name: `Android Phone (${parts[0]})`, type: 'android' });
-                }
-            }
-        } catch (e) {}
-    }
-    return devices;
 });
 
 ipcMain.handle('list-files', async (event, targetPath, deviceId) => {
@@ -455,7 +414,7 @@ ipcMain.handle('delete-file', async (event, targetPath, deviceId) => {
             const { exec } = require('child_process');
             const util = require('util');
             const execPromise = util.promisify(exec);
-            const adbPath = 'adb'; // Simplification for now, should use getAdbPath
+            const adbPath = 'adb';
             await execPromise(`"${adbPath}" -s ${deviceId} shell rm -rf "${targetPath}"`);
         }
         return { success: true };
@@ -488,8 +447,6 @@ ipcMain.handle('get-mobile-preview', async (event, deviceId, remotePath) => {
     const { exec } = require('child_process');
     const util = require('util');
     const execPromise = util.promisify(exec);
-    
-    // Minimal Adb search for this specific handler
     const adbPath = 'adb'; 
     const ext = path.extname(remotePath).toLowerCase();
     const tempPath = path.join(tempDownloadsDir, `preview_${Date.now()}${ext}`);
@@ -524,7 +481,40 @@ ipcMain.handle('list-local-volumes', async () => {
     return volumes;
 });
 
+ipcMain.handle('list-devices', async () => {
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
+
+    async function getAdbPath() {
+        const locations = ['adb', path.join(app.getPath('home'), 'Library/Android/sdk/platform-tools/adb'), '/usr/local/bin/adb', '/opt/homebrew/bin/adb', path.join(process.env.LOCALAPPDATA || '', 'Android/Sdk/platform-tools/adb.exe'), 'C:\\platform-tools\\adb.exe'];
+        for (const loc of locations) {
+            try {
+                const { stdout } = await execPromise(`"${loc}" version`);
+                if (stdout.includes('Android Debug Bridge')) return loc;
+            } catch (e) {}
+        }
+        return null;
+    }
+
+    const adbPath = await getAdbPath();
+    const devices = [];
+    if (adbPath) {
+        try {
+            await execPromise(`"${adbPath}" start-server`);
+            const { stdout } = await execPromise(`"${adbPath}" devices`);
+            const lines = stdout.split('\n');
+            for (let i = 1; i < lines.length; i++) {
+                const parts = lines[i].trim().split(/\s+/);
+                if (parts.length >= 2 && parts[1] === 'device') {
+                    devices.push({ id: parts[0], name: `Android Phone (${parts[0]})`, type: 'android' });
+                }
+            }
+        } catch (e) {}
+    }
+    return devices;
+});
+
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
 });
-
