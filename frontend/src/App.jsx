@@ -181,6 +181,7 @@ function App() {
     setError('');
     
     try {
+      // MAINTAIN ORIGINAL FORMAT
       const ext = localFile.name.split('.').pop().toLowerCase();
       const result = await window.electron.trimLocalFile(localFile.path, ext, startTime, endTime);
       if (result.success) {
@@ -559,7 +560,7 @@ function App() {
                     disabled={isDownloading}
                   />
                   <button type="submit" className="analyze-btn" disabled={loading || isDownloading}>
-                    {loading ? <div className="spinner"></div> : 'Analyze'}
+                    {loading ? <div className="spinner-small"></div> : 'Analyze'}
                   </button>
                 </div>
               </form>
@@ -746,7 +747,7 @@ function App() {
                   </div>
 
                   {trimSuccess && (
-                    <div className="success-banner padded">✨ Clip Exported! Saved to your Downloads folder.</div>
+                    <div className="success-banner padded">✨ Clip Exported! Saved to your folder.</div>
                   )}
                 </div>
               )}

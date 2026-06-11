@@ -30,43 +30,41 @@ let ffprobePath = '';
 
 // Helper to find binaries in various locations
 function findBinaries() {
-    const platform = process.platform;
-    const isWin = platform === 'win32';
-    const ffmpegName = isWin ? 'ffmpeg.exe' : 'ffmpeg';
-    const ffprobeName = isWin ? 'ffprobe.exe' : 'ffprobe';
-
-    // 1. Check local node_modules (Dev)
+    // Try to require them first (works in Dev and sometimes in Prod)
     try {
         const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
         const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
-        if (fs.existsSync(ffmpegInstaller.path)) ffmpegPath = ffmpegInstaller.path;
-        if (fs.existsSync(ffprobeInstaller.path)) ffprobePath = ffprobeInstaller.path;
+        if (ffmpegInstaller.path && fs.existsSync(ffmpegInstaller.path)) ffmpegPath = ffmpegInstaller.path;
+        if (ffprobeInstaller.path && fs.existsSync(ffprobeInstaller.path)) ffprobePath = ffprobeInstaller.path;
     } catch (e) {}
 
-    // 2. Check unpacked asar (Production)
+    // 2. Deep Search in unpacked asar (Production fallback)
     if (!ffmpegPath || !ffprobePath) {
         const unpackedPath = path.join(process.resourcesPath, 'app.asar.unpacked');
         
-        const possibleFfmpegPaths = [
-            path.join(unpackedPath, 'node_modules', '@ffmpeg-installer', 'ffmpeg', 'bin', platform, process.arch, ffmpegName),
-            path.join(unpackedPath, 'node_modules', '@ffmpeg-installer', 'ffmpeg', 'bin', ffmpegName)
-        ];
-        
-        const possibleFfprobePaths = [
-            path.join(unpackedPath, 'node_modules', '@ffprobe-installer', 'ffprobe', 'bin', platform, process.arch, ffprobeName),
-            path.join(unpackedPath, 'node_modules', '@ffprobe-installer', 'ffprobe', 'bin', ffprobeName)
-        ];
+        function searchForBinary(base, name) {
+            if (!fs.existsSync(base)) return null;
+            const files = fs.readdirSync(base);
+            for (const file of files) {
+                const fullPath = path.join(base, file);
+                if (file === name) return fullPath;
+                if (fs.statSync(fullPath).isDirectory()) {
+                    const found = searchForBinary(fullPath, name);
+                    if (found) return found;
+                }
+            }
+            return null;
+        }
 
-        for (const p of possibleFfmpegPaths) {
-            if (fs.existsSync(p)) { ffmpegPath = p; break; }
-        }
-        for (const p of possibleFfprobePaths) {
-            if (fs.existsSync(p)) { ffprobePath = p; break; }
-        }
+        const binName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+        const probeName = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
+
+        if (!ffmpegPath) ffmpegPath = searchForBinary(unpackedPath, binName) || '';
+        if (!ffprobePath) ffprobePath = searchForBinary(unpackedPath, probeName) || '';
     }
 
-    console.log('Final Binary Search - FFmpeg:', ffmpegPath);
-    console.log('Final Binary Search - FFprobe:', ffprobePath);
+    console.log('Final Binary Discovery - FFmpeg:', ffmpegPath);
+    console.log('Final Binary Discovery - FFprobe:', ffprobePath);
 }
 
 // Lazy-loaded dependencies
@@ -258,7 +256,8 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
     if (!ytDlpWrap) return;
     try {
         const outputTemplate = path.join(tempDownloadsDir, `%(title)s.%(ext)s`);
-        let args = [url, '-o', outputTemplate, '--no-part'];
+        // --no-resume fixes HTTP 416 errors
+        let args = [url, '-o', outputTemplate, '--no-part', '--no-resume'];
         
         if (format === 'mp3-320') {
             args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
@@ -274,9 +273,9 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
             args.push('--force-keyframes-at-cuts');
         }
 
-        // PROVIDE ABSOLUTE BINARY PATHS
+        // PROVIDE DIRECTORY OF BINARIES TO YT-DLP
         if (ffmpegPath) {
-            args.push('--ffmpeg-location', ffmpegPath);
+            args.push('--ffmpeg-location', path.dirname(ffmpegPath));
         }
 
         args.push('--js-runtimes', 'node');
@@ -298,11 +297,21 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
                 files.forEach(file => {
                     const oldPath = path.join(tempDownloadsDir, file);
                     const newPath = path.join(finalDownloadsDir, file);
-                    if (fs.existsSync(oldPath)) fs.renameSync(oldPath, newPath);
+                    
+                    // ONLY MOVE THE TARGET FORMAT (prevent .webm/.m4a leaks)
+                    const isTarget = (format === 'mp3-320' && file.endsWith('.mp3')) || 
+                                     (format !== 'mp3-320' && file.endsWith('.mp4'));
+                    
+                    if (isTarget) {
+                        if (fs.existsSync(oldPath)) fs.renameSync(oldPath, newPath);
+                    } else {
+                        // CLEANUP LEFTOVERS
+                        try { fs.unlinkSync(oldPath); } catch (e) {}
+                    }
                 });
                 if (mainWindow) mainWindow.webContents.send('download-completed');
                 if (process.platform === 'darwin') app.setBadgeCount(app.getBadgeCount() + 1);
-            } catch (e) { console.error('Post-download rename failed:', e); }
+            } catch (e) { console.error('Post-download sync failed:', e); }
         });
     } catch (e) {
         if (mainWindow) mainWindow.webContents.send('download-error', { error: e.message });
@@ -333,10 +342,20 @@ ipcMain.handle('trim-local-file', async (event, filePath, format, startTime, end
     
     return new Promise((resolve) => {
         if (!ffmpegPath) {
-            return resolve({ error: 'FFmpeg not available' });
+            return resolve({ error: 'FFmpeg not available. Path was: ' + ffmpegPath });
         }
         
-        let args = ['-ss', startTime.toString(), '-to', endTime.toString(), '-i', filePath, '-c', 'copy', outputPath];
+        // Trimming with -c:a aac to ensure audio is present in output MP4
+        const isVideo = ext === 'mp4';
+        let args = ['-ss', startTime.toString(), '-to', endTime.toString(), '-i', filePath];
+        
+        if (isVideo) {
+            args.push('-c:v', 'copy', '-c:a', 'aac', '-strict', 'experimental');
+        } else {
+            args.push('-c', 'copy');
+        }
+        
+        args.push(outputPath);
         
         const proc = spawn(ffmpegPath, args);
         proc.on('close', (code) => {
