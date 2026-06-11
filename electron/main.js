@@ -24,10 +24,53 @@ try {
     isDev = false;
 }
 
+// Global binary paths
+let ffmpegPath = '';
+let ffprobePath = '';
+
+// Helper to find binaries in various locations
+function findBinaries() {
+    const platform = process.platform;
+    const isWin = platform === 'win32';
+    const ffmpegName = isWin ? 'ffmpeg.exe' : 'ffmpeg';
+    const ffprobeName = isWin ? 'ffprobe.exe' : 'ffprobe';
+
+    // 1. Check local node_modules (Dev)
+    try {
+        const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+        const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
+        if (fs.existsSync(ffmpegInstaller.path)) ffmpegPath = ffmpegInstaller.path;
+        if (fs.existsSync(ffprobeInstaller.path)) ffprobePath = ffprobeInstaller.path;
+    } catch (e) {}
+
+    // 2. Check unpacked asar (Production)
+    if (!ffmpegPath || !ffprobePath) {
+        const unpackedPath = path.join(process.resourcesPath, 'app.asar.unpacked');
+        
+        const possibleFfmpegPaths = [
+            path.join(unpackedPath, 'node_modules', '@ffmpeg-installer', 'ffmpeg', 'bin', platform, process.arch, ffmpegName),
+            path.join(unpackedPath, 'node_modules', '@ffmpeg-installer', 'ffmpeg', 'bin', ffmpegName)
+        ];
+        
+        const possibleFfprobePaths = [
+            path.join(unpackedPath, 'node_modules', '@ffprobe-installer', 'ffprobe', 'bin', platform, process.arch, ffprobeName),
+            path.join(unpackedPath, 'node_modules', '@ffprobe-installer', 'ffprobe', 'bin', ffprobeName)
+        ];
+
+        for (const p of possibleFfmpegPaths) {
+            if (fs.existsSync(p)) { ffmpegPath = p; break; }
+        }
+        for (const p of possibleFfprobePaths) {
+            if (fs.existsSync(p)) { ffprobePath = p; break; }
+        }
+    }
+
+    console.log('Final Binary Search - FFmpeg:', ffmpegPath);
+    console.log('Final Binary Search - FFprobe:', ffprobePath);
+}
+
 // Lazy-loaded dependencies
 let autoUpdater;
-let ffmpeg;
-let ffprobe;
 let YTDlpWrap;
 let fixPath;
 let ytDlpWrap = null;
@@ -38,6 +81,8 @@ let currentDownloadProcess = null;
 
 app.whenReady().then(async () => {
     try {
+        findBinaries();
+
         userDataPath = app.getPath('userData');
         finalDownloadsDir = app.getPath('downloads');
         tempDownloadsDir = path.join(userDataPath, 'temp_downloads');
@@ -56,15 +101,6 @@ app.whenReady().then(async () => {
             const updaterModule = require('electron-updater');
             autoUpdater = updaterModule.autoUpdater;
         } catch (e) {}
-
-        try {
-            // Load both ffmpeg and ffprobe
-            ffmpeg = require('@ffmpeg-installer/ffmpeg');
-            ffprobe = require('@ffprobe-installer/ffprobe');
-            
-            // Fix: In production, we might need to point to the unpacked binary
-            // electron-builder's asar.unpack handles this.
-        } catch (e) { console.error('FFmpeg/FFprobe load failed:', e); }
 
         try {
             const wrapModule = require('yt-dlp-wrap');
@@ -201,7 +237,7 @@ ipcMain.handle('get-info', async (event, url) => {
                 title: metadata.title,
                 channel: metadata.uploader || 'Playlist',
                 isPlaylist: true,
-                entries: metadata.entries.map(e => ({ id: e.id, title: e.title, duration: e.duration }))
+                entries: metadata.entries.map(e => ({ id: e.id, title: e.title, duration: e.duration, url: e.webpage_url || e.url }))
             };
         }
         return {
@@ -222,28 +258,25 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
     if (!ytDlpWrap) return;
     try {
         const outputTemplate = path.join(tempDownloadsDir, `%(title)s.%(ext)s`);
-        let args = [url, '-o', outputTemplate];
+        let args = [url, '-o', outputTemplate, '--no-part'];
         
-        // Ensure we merge into mp4 by default for videos
-        args.push('--merge-output-format', 'mp4');
-
         if (format === 'mp3-320') {
-            // Overwrite args for audio only
-            args = [url, '-o', outputTemplate, '-x', '--audio-format', 'mp3', '--audio-quality', '0'];
+            args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
+        } else {
+            args.push('--merge-output-format', 'mp4');
+            if (format === '4k') args.push('-f', 'bestvideo[height<=2160]+bestaudio/best');
+            else if (format === '1080p') args.push('-f', 'bestvideo[height<=1080]+bestaudio/best');
+            else if (format === '720p') args.push('-f', 'bestvideo[height<=720]+bestaudio/best');
         }
-        else if (format === '4k') args.push('-f', 'bestvideo[height<=2160]+bestaudio/best');
-        else if (format === '1080p') args.push('-f', 'bestvideo[height<=1080]+bestaudio/best');
-        else if (format === '720p') args.push('-f', 'bestvideo[height<=720]+bestaudio/best');
 
         if (startTime || endTime) {
             args.push('--download-sections', `*${startTime || 0}-${endTime || 'inf'}`);
             args.push('--force-keyframes-at-cuts');
         }
 
-        // IMPORTANT: Provide the directory containing both ffmpeg and ffprobe
-        if (ffmpeg && ffmpeg.path) {
-            const ffmpegDir = path.dirname(ffmpeg.path);
-            args.push('--ffmpeg-location', ffmpegDir);
+        // PROVIDE ABSOLUTE BINARY PATHS
+        if (ffmpegPath) {
+            args.push('--ffmpeg-location', ffmpegPath);
         }
 
         args.push('--js-runtimes', 'node');
@@ -294,21 +327,18 @@ ipcMain.handle('select-file', async () => {
 
 ipcMain.handle('trim-local-file', async (event, filePath, format, startTime, endTime) => {
     const { spawn } = require('child_process');
-    // Ensure format is just the extension
     const ext = format.toLowerCase().includes('mp3') ? 'mp3' : 'mp4';
     const outputName = `trimmed_${Date.now()}.${ext}`;
     const outputPath = path.join(finalDownloadsDir, outputName);
     
     return new Promise((resolve) => {
-        if (!ffmpeg || !ffmpeg.path) {
+        if (!ffmpegPath) {
             return resolve({ error: 'FFmpeg not available' });
         }
         
-        // Use -ss before -i for faster seeking, but after -i for more accuracy. 
-        // For 'copy' codec, we need to be careful with keyframes.
         let args = ['-ss', startTime.toString(), '-to', endTime.toString(), '-i', filePath, '-c', 'copy', outputPath];
         
-        const proc = spawn(ffmpeg.path, args);
+        const proc = spawn(ffmpegPath, args);
         proc.on('close', (code) => {
             if (code === 0) resolve({ success: true, path: outputPath });
             else resolve({ error: 'FFmpeg failed with code ' + code });

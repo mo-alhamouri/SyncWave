@@ -70,10 +70,12 @@ function App() {
   const [queueIndex, setQueueIndex] = useState(0);
   const [queueActive, setQueueActive] = useState(false);
 
-  // Toast Helper
+  // Toast Helper - NO AUTO-HIDE FOR ERRORS
   const showToast = (message, type = 'error') => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 5000);
+    if (type === 'success') {
+      setTimeout(() => setToast(null), 5000);
+    }
   };
 
   const filteredPlaylistEntries = metadata?.isPlaylist 
@@ -87,7 +89,6 @@ function App() {
     if (window.electron) {
       window.electron.getVersion().then(setVersion);
 
-      // Listen for updates
       const removeAvailableListener = window.electron.onUpdateAvailable((info) => {
         setUpdateAvailable(info.version);
       });
@@ -180,11 +181,11 @@ function App() {
     setError('');
     
     try {
-      // MAINTAIN ORIGINAL FORMAT
       const ext = localFile.name.split('.').pop().toLowerCase();
       const result = await window.electron.trimLocalFile(localFile.path, ext, startTime, endTime);
       if (result.success) {
         setTrimSuccess(true);
+        showToast('Clip exported successfully!', 'success');
       } else {
         throw new Error(result.error);
       }
@@ -225,7 +226,6 @@ function App() {
         currentPlayer.pause();
         setIsPlaying(false);
       } else {
-        // PLAY SELECTION
         currentPlayer.currentTime = startTime;
         currentPlayer.play().catch(e => console.error('Play failed:', e));
         setIsPlaying(true);
@@ -662,9 +662,10 @@ function App() {
                           ref={hiddenAudioRef}
                           src={`media://${localFile.path}`}
                           onLoadedMetadata={(e) => {
-                            setLocalDuration(e.target.duration);
-                            setEndTime(e.target.duration);
+                            const duration = e.target.duration;
+                            setLocalDuration(duration);
                             setStartTime(0);
+                            setEndTime(duration);
                           }}
                         />
                         <div className="audio-viz-bars">
@@ -676,9 +677,10 @@ function App() {
                         ref={localPlayerRef}
                         src={`media://${localFile.path}`}
                         onLoadedMetadata={(e) => {
-                          setLocalDuration(e.target.duration);
-                          setEndTime(e.target.duration);
+                          const duration = e.target.duration;
+                          setLocalDuration(duration);
                           setStartTime(0);
+                          setEndTime(duration);
                         }}
                         className="local-preview-player"
                         controls
@@ -744,7 +746,7 @@ function App() {
                   </div>
 
                   {trimSuccess && (
-                    <div className="success-banner padded">✨ Clip Exported! Saved to your folder.</div>
+                    <div className="success-banner padded">✨ Clip Exported! Saved to your Downloads folder.</div>
                   )}
                 </div>
               )}
