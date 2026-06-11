@@ -44,8 +44,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isAppleSilicon) {
                 return `${baseUrl}/SyncWave-${RELEASE_VERSION}-arm64.dmg`;
             } else {
-                // Default to x64 for Intel Macs (electron-builder defaults to no suffix for first arch)
-                return `${baseUrl}/SyncWave-${RELEASE_VERSION}.dmg`;
+                // Default to x64 for Intel Macs
+                return `${baseUrl}/SyncWave-${RELEASE_VERSION}-x64.dmg`;
             }
         } else if (platform.includes('win')) {
             return `${baseUrl}/SyncWave-Setup-${RELEASE_VERSION}.exe`;
