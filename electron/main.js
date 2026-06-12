@@ -27,15 +27,21 @@ try {
 // Global binary paths
 let ffmpegPath = '';
 let ffprobePath = '';
+let centralBinDir = '';
 
-// Helper to find binaries in various locations
-function findBinaries() {
+// Helper to find binaries and centralize them for yt-dlp
+function orchestrateBinaries() {
     const platform = process.platform;
-    const arch = process.arch; // e.g., 'x64' or 'arm64'
-    const binName = platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
-    const probeName = platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
+    const arch = process.arch;
+    const isWin = platform === 'win32';
+    const binName = isWin ? 'ffmpeg.exe' : 'ffmpeg';
+    const probeName = isWin ? 'ffprobe.exe' : 'ffprobe';
 
-    // 1. Try resolving via module requirements (best for Dev and some Prod setups)
+    // Path in userData to host symlinks/copies
+    centralBinDir = path.join(app.getPath('userData'), 'bin_orchestra');
+    if (!fs.existsSync(centralBinDir)) fs.mkdirSync(centralBinDir, { recursive: true });
+
+    // 1. Try resolving via module requirements
     try {
         const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
         const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
@@ -43,26 +49,20 @@ function findBinaries() {
         if (ffprobeInstaller.path && fs.existsSync(ffprobeInstaller.path)) ffprobePath = ffprobeInstaller.path;
     } catch (e) {}
 
-    // 2. Deep Search specifically in unpacked asar (Production definitive fix)
-    if (!ffmpegPath || !ffprobePath) {
+    // 2. Deep Search in unpacked asar (Production definitive fix)
+    if (!ffmpegPath || !ffprobePath || !ffmpegPath.includes(arch)) {
         const unpackedPath = path.join(process.resourcesPath, 'app.asar.unpacked');
         
-        // Targeted paths based on installer package structure
-        const platformArch = `${platform}-${arch}`;
-        const searchPaths = [
-            path.join(unpackedPath, 'node_modules', '@ffmpeg-installer', platformArch, binName),
-            path.join(unpackedPath, 'node_modules', '@ffprobe-installer', platformArch, probeName),
-            // Generic fallback
-            path.join(unpackedPath, 'node_modules', '@ffmpeg-installer', 'ffmpeg', binName),
-            path.join(unpackedPath, 'node_modules', '@ffprobe-installer', 'ffprobe', probeName)
-        ];
-
         function deepSearch(base, target) {
             if (!fs.existsSync(base)) return null;
             const entries = fs.readdirSync(base);
             for (const entry of entries) {
                 const fullPath = path.join(base, entry);
-                if (entry === target) return fullPath;
+                if (entry === target) {
+                    // architecture check for macOS
+                    if (platform === 'darwin' && !fullPath.includes(arch)) continue;
+                    return fullPath;
+                }
                 if (fs.statSync(fullPath).isDirectory()) {
                     const found = deepSearch(fullPath, target);
                     if (found) return found;
@@ -71,20 +71,35 @@ function findBinaries() {
             return null;
         }
 
-        if (!ffmpegPath) ffmpegPath = deepSearch(unpackedPath, binName) || '';
-        if (!ffprobePath) ffprobePath = deepSearch(unpackedPath, probeName) || '';
+        if (!ffmpegPath || (platform === 'darwin' && !ffmpegPath.includes(arch))) 
+            ffmpegPath = deepSearch(unpackedPath, binName) || '';
+        if (!ffprobePath || (platform === 'darwin' && !ffprobePath.includes(arch))) 
+            ffprobePath = deepSearch(unpackedPath, probeName) || '';
     }
 
-    // Ensure permissions on macOS/Linux
-    if (process.platform !== 'win32') {
+    // 3. Centralize them
+    if (ffmpegPath && fs.existsSync(ffmpegPath)) {
+        const dest = path.join(centralBinDir, binName);
         try {
-            if (ffmpegPath) fs.chmodSync(ffmpegPath, '755');
-            if (ffprobePath) fs.chmodSync(ffprobePath, '755');
-        } catch (e) {}
+            if (fs.existsSync(dest)) fs.unlinkSync(dest);
+            fs.copyFileSync(ffmpegPath, dest);
+            fs.chmodSync(dest, '755');
+            ffmpegPath = dest; // Use centralized path
+        } catch (e) { console.error('FFmpeg centralization failed:', e); }
     }
 
-    console.log('Final Binary Discovery - FFmpeg:', ffmpegPath);
-    console.log('Final Binary Discovery - FFprobe:', ffprobePath);
+    if (ffprobePath && fs.existsSync(ffprobePath)) {
+        const dest = path.join(centralBinDir, probeName);
+        try {
+            if (fs.existsSync(dest)) fs.unlinkSync(dest);
+            fs.copyFileSync(ffprobePath, dest);
+            fs.chmodSync(dest, '755');
+            ffprobePath = dest; // Use centralized path
+        } catch (e) { console.error('FFprobe centralization failed:', e); }
+    }
+
+    console.log('Binary Orchestration - FFmpeg:', ffmpegPath);
+    console.log('Binary Orchestration - FFprobe:', ffprobePath);
 }
 
 // Lazy-loaded dependencies
@@ -99,7 +114,7 @@ let currentDownloadProcess = null;
 
 app.whenReady().then(async () => {
     try {
-        findBinaries();
+        orchestrateBinaries();
 
         userDataPath = app.getPath('userData');
         finalDownloadsDir = app.getPath('downloads');
@@ -276,13 +291,15 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
     if (!ytDlpWrap) return;
     try {
         const outputTemplate = path.join(tempDownloadsDir, `%(title)s.%(ext)s`);
-        // --no-continue is the correct yt-dlp option (fixes --no-resume error)
         let args = [url, '-o', outputTemplate, '--no-part', '--no-continue'];
         
         if (format === 'mp3-320') {
             args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
         } else {
             args.push('--merge-output-format', 'mp4');
+            // Force re-encode audio to aac to ensure sound is present in MP4
+            args.push('--postprocessor-args', 'ffmpeg: -c:a aac -b:a 192k');
+            
             if (format === '4k') args.push('-f', 'bestvideo[height<=2160]+bestaudio/best');
             else if (format === '1080p') args.push('-f', 'bestvideo[height<=1080]+bestaudio/best');
             else if (format === '720p') args.push('-f', 'bestvideo[height<=720]+bestaudio/best');
@@ -293,8 +310,9 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
             args.push('--force-keyframes-at-cuts');
         }
 
-        if (ffmpegPath) {
-            args.push('--ffmpeg-location', path.dirname(ffmpegPath));
+        // POINT TO CENTRALIZED BINARY DIRECTORY
+        if (centralBinDir) {
+            args.push('--ffmpeg-location', centralBinDir);
         }
 
         args.push('--js-runtimes', 'node');
@@ -332,16 +350,13 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
                     if (mainWindow) mainWindow.webContents.send('download-completed');
                     if (process.platform === 'darwin') app.setBadgeCount(app.getBadgeCount() + 1);
                 } else {
-                    // If it failed but didn't throw 'error' event yet
-                    if (mainWindow) mainWindow.webContents.send('download-error', { error: `Process exited with code ${code}. Check if the URL is valid.` });
+                    if (mainWindow) mainWindow.webContents.send('download-error', { error: `Process exited with code ${code}.` });
                 }
             } catch (e) { 
                 console.error('Post-download sync failed:', e);
-                if (mainWindow) mainWindow.webContents.send('download-error', { error: 'Post-download sync failed: ' + e.message });
             }
         });
     } catch (e) {
-        console.error('Download Initiation Error:', e);
         if (mainWindow) mainWindow.webContents.send('download-error', { error: e.message });
     }
 });
@@ -370,7 +385,7 @@ ipcMain.handle('trim-local-file', async (event, filePath, format, startTime, end
     
     return new Promise((resolve) => {
         if (!ffmpegPath || !fs.existsSync(ffmpegPath)) {
-            return resolve({ error: 'FFmpeg binary not found at: ' + ffmpegPath });
+            return resolve({ error: 'FFmpeg binary not found or incompatible architecture.' });
         }
         
         const isVideo = ext === 'mp4';
@@ -384,18 +399,12 @@ ipcMain.handle('trim-local-file', async (event, filePath, format, startTime, end
         
         args.push(outputPath);
         
-        console.log('Spawning FFmpeg:', ffmpegPath, args.join(' '));
         const proc = spawn(ffmpegPath, args);
-        
         proc.on('close', (code) => {
             if (code === 0) resolve({ success: true, path: outputPath });
             else resolve({ error: 'FFmpeg failed with code ' + code });
         });
-        
-        proc.on('error', (err) => {
-            console.error('FFmpeg Spawn Error:', err);
-            resolve({ error: 'FFmpeg spawn error: ' + err.message + ' (Code: ' + err.code + ')' });
-        });
+        proc.on('error', (err) => resolve({ error: 'FFmpeg spawn error: ' + err.message }));
     });
 });
 
