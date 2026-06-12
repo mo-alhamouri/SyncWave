@@ -30,7 +30,12 @@ let ffprobePath = '';
 
 // Helper to find binaries in various locations
 function findBinaries() {
-    // Try to require them first (works in Dev and sometimes in Prod)
+    const platform = process.platform;
+    const arch = process.arch; // e.g., 'x64' or 'arm64'
+    const binName = platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+    const probeName = platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
+
+    // 1. Try resolving via module requirements (best for Dev and some Prod setups)
     try {
         const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
         const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
@@ -38,29 +43,44 @@ function findBinaries() {
         if (ffprobeInstaller.path && fs.existsSync(ffprobeInstaller.path)) ffprobePath = ffprobeInstaller.path;
     } catch (e) {}
 
-    // 2. Deep Search in unpacked asar (Production fallback)
+    // 2. Deep Search specifically in unpacked asar (Production definitive fix)
     if (!ffmpegPath || !ffprobePath) {
         const unpackedPath = path.join(process.resourcesPath, 'app.asar.unpacked');
         
-        function searchForBinary(base, name) {
+        // Targeted paths based on installer package structure
+        const platformArch = `${platform}-${arch}`;
+        const searchPaths = [
+            path.join(unpackedPath, 'node_modules', '@ffmpeg-installer', platformArch, binName),
+            path.join(unpackedPath, 'node_modules', '@ffprobe-installer', platformArch, probeName),
+            // Generic fallback
+            path.join(unpackedPath, 'node_modules', '@ffmpeg-installer', 'ffmpeg', binName),
+            path.join(unpackedPath, 'node_modules', '@ffprobe-installer', 'ffprobe', probeName)
+        ];
+
+        function deepSearch(base, target) {
             if (!fs.existsSync(base)) return null;
-            const files = fs.readdirSync(base);
-            for (const file of files) {
-                const fullPath = path.join(base, file);
-                if (file === name) return fullPath;
+            const entries = fs.readdirSync(base);
+            for (const entry of entries) {
+                const fullPath = path.join(base, entry);
+                if (entry === target) return fullPath;
                 if (fs.statSync(fullPath).isDirectory()) {
-                    const found = searchForBinary(fullPath, name);
+                    const found = deepSearch(fullPath, target);
                     if (found) return found;
                 }
             }
             return null;
         }
 
-        const binName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
-        const probeName = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
+        if (!ffmpegPath) ffmpegPath = deepSearch(unpackedPath, binName) || '';
+        if (!ffprobePath) ffprobePath = deepSearch(unpackedPath, probeName) || '';
+    }
 
-        if (!ffmpegPath) ffmpegPath = searchForBinary(unpackedPath, binName) || '';
-        if (!ffprobePath) ffprobePath = searchForBinary(unpackedPath, probeName) || '';
+    // Ensure permissions on macOS/Linux
+    if (process.platform !== 'win32') {
+        try {
+            if (ffmpegPath) fs.chmodSync(ffmpegPath, '755');
+            if (ffprobePath) fs.chmodSync(ffprobePath, '755');
+        } catch (e) {}
     }
 
     console.log('Final Binary Discovery - FFmpeg:', ffmpegPath);
@@ -256,8 +276,8 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
     if (!ytDlpWrap) return;
     try {
         const outputTemplate = path.join(tempDownloadsDir, `%(title)s.%(ext)s`);
-        // --no-resume fixes HTTP 416 errors
-        let args = [url, '-o', outputTemplate, '--no-part', '--no-resume'];
+        // --no-continue is the correct yt-dlp option (fixes --no-resume error)
+        let args = [url, '-o', outputTemplate, '--no-part', '--no-continue'];
         
         if (format === 'mp3-320') {
             args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
@@ -273,7 +293,6 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
             args.push('--force-keyframes-at-cuts');
         }
 
-        // PROVIDE DIRECTORY OF BINARIES TO YT-DLP
         if (ffmpegPath) {
             args.push('--ffmpeg-location', path.dirname(ffmpegPath));
         }
@@ -288,32 +307,41 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
         });
 
         downloader.on('error', (error) => {
+            console.error('yt-dlp Process Error:', error);
             if (mainWindow) mainWindow.webContents.send('download-error', { error: error.message });
         });
 
-        downloader.on('close', () => {
+        downloader.on('close', (code) => {
+            console.log('yt-dlp Process Closed with code:', code);
             try {
                 const files = fs.readdirSync(tempDownloadsDir);
                 files.forEach(file => {
                     const oldPath = path.join(tempDownloadsDir, file);
                     const newPath = path.join(finalDownloadsDir, file);
                     
-                    // ONLY MOVE THE TARGET FORMAT (prevent .webm/.m4a leaks)
                     const isTarget = (format === 'mp3-320' && file.endsWith('.mp3')) || 
                                      (format !== 'mp3-320' && file.endsWith('.mp4'));
                     
                     if (isTarget) {
                         if (fs.existsSync(oldPath)) fs.renameSync(oldPath, newPath);
                     } else {
-                        // CLEANUP LEFTOVERS
                         try { fs.unlinkSync(oldPath); } catch (e) {}
                     }
                 });
-                if (mainWindow) mainWindow.webContents.send('download-completed');
-                if (process.platform === 'darwin') app.setBadgeCount(app.getBadgeCount() + 1);
-            } catch (e) { console.error('Post-download sync failed:', e); }
+                if (code === 0) {
+                    if (mainWindow) mainWindow.webContents.send('download-completed');
+                    if (process.platform === 'darwin') app.setBadgeCount(app.getBadgeCount() + 1);
+                } else {
+                    // If it failed but didn't throw 'error' event yet
+                    if (mainWindow) mainWindow.webContents.send('download-error', { error: `Process exited with code ${code}. Check if the URL is valid.` });
+                }
+            } catch (e) { 
+                console.error('Post-download sync failed:', e);
+                if (mainWindow) mainWindow.webContents.send('download-error', { error: 'Post-download sync failed: ' + e.message });
+            }
         });
     } catch (e) {
+        console.error('Download Initiation Error:', e);
         if (mainWindow) mainWindow.webContents.send('download-error', { error: e.message });
     }
 });
@@ -341,11 +369,10 @@ ipcMain.handle('trim-local-file', async (event, filePath, format, startTime, end
     const outputPath = path.join(finalDownloadsDir, outputName);
     
     return new Promise((resolve) => {
-        if (!ffmpegPath) {
-            return resolve({ error: 'FFmpeg not available. Path was: ' + ffmpegPath });
+        if (!ffmpegPath || !fs.existsSync(ffmpegPath)) {
+            return resolve({ error: 'FFmpeg binary not found at: ' + ffmpegPath });
         }
         
-        // Trimming with -c:a aac to ensure audio is present in output MP4
         const isVideo = ext === 'mp4';
         let args = ['-ss', startTime.toString(), '-to', endTime.toString(), '-i', filePath];
         
@@ -357,12 +384,18 @@ ipcMain.handle('trim-local-file', async (event, filePath, format, startTime, end
         
         args.push(outputPath);
         
+        console.log('Spawning FFmpeg:', ffmpegPath, args.join(' '));
         const proc = spawn(ffmpegPath, args);
+        
         proc.on('close', (code) => {
             if (code === 0) resolve({ success: true, path: outputPath });
             else resolve({ error: 'FFmpeg failed with code ' + code });
         });
-        proc.on('error', (err) => resolve({ error: 'FFmpeg spawn error: ' + err.message }));
+        
+        proc.on('error', (err) => {
+            console.error('FFmpeg Spawn Error:', err);
+            resolve({ error: 'FFmpeg spawn error: ' + err.message + ' (Code: ' + err.code + ')' });
+        });
     });
 });
 
