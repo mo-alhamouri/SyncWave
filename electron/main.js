@@ -150,12 +150,14 @@ app.whenReady().then(async () => {
         });
 
         await initYtdlp();
-        createWindow();
-
-        if (!isDev && autoUpdater) {
+        // Check for updates (Disabled on macOS due to missing ZIP blockmaps in DMG builds)
+        if (!isDev && autoUpdater && process.platform !== 'darwin') {
             autoUpdater.checkForUpdatesAndNotify().catch(e => console.error('Update check failed:', e));
             setupUpdaterEvents();
         }
+
+        // Create UI
+        createWindow();
 
     } catch (err) {
         reportError('Initialization Failed', err);
