@@ -15,7 +15,7 @@ jobs:
 
     strategy:
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-13, windows-latest] # macos-13 is Intel-based, macos-latest is ARM-based
 
     steps:
       - name: Check out git repository

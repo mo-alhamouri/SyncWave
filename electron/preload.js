@@ -5,65 +5,56 @@ contextBridge.exposeInMainWorld('electron', {
     getInfo: (url) => ipcRenderer.invoke('get-info', url),
     
     // Waveform generation
-    getWaveform: (url) => ipcRenderer.invoke('get-waveform', url),
-    
-    // Download process with trim support
-    download: (url, format, startTime, endTime) => ipcRenderer.send('start-download', url, format, startTime, endTime),
-    
-    // Listen for progress updates
-    onDownloadProgress: (callback) => {
-        const subscription = (event, data) => callback(data);
-        ipcRenderer.on('download-progress', subscription);
-        return () => ipcRenderer.removeListener('download-progress', subscription);
-    },
-    
-    // Listen for completion
-    onDownloadCompleted: (callback) => {
-        const subscription = (event, data) => callback(data);
-        ipcRenderer.on('download-completed', subscription);
-        return () => ipcRenderer.removeListener('download-completed', subscription);
-    },
-    
-    // Listen for errors
-    onDownloadError: (callback) => {
-        const subscription = (event, data) => callback(data);
-        ipcRenderer.on('download-error', subscription);
-        return () => ipcRenderer.removeListener('download-error', subscription);
-    },
-    
-    // Stop process
-    stopDownload: () => ipcRenderer.send('stop-download'),
-    
-    // Open downloads folder
-    openDownloadsFolder: () => ipcRenderer.send('open-downloads-folder'),
-
-    // Clear dock badge
-    clearBadge: () => ipcRenderer.send('clear-badge'),
+    getWaveform: () => ipcRenderer.invoke('get-waveform'),
 
     // Version & Updates
     getVersion: () => ipcRenderer.invoke('get-version'),
     checkUpdates: () => ipcRenderer.invoke('check-for-updates'),
-
-    // Local File Trimmer
-    selectFile: () => ipcRenderer.invoke('select-file'),
-    trimLocalFile: (filePath, format, startTime, endTime) => ipcRenderer.invoke('trim-local-file', filePath, format, startTime, endTime),
-
-    // Mobile Transfer
-    listDevices: () => ipcRenderer.invoke('list-devices'),
-    listLocalVolumes: () => ipcRenderer.invoke('list-local-volumes'),
-    listFiles: (path, deviceId) => ipcRenderer.invoke('list-files', path, deviceId),
-    getMobilePreview: (deviceId, remotePath) => ipcRenderer.invoke('get-mobile-preview', deviceId, remotePath),
-    transferFile: (sourcePath, destPath, sourceDeviceId, destDeviceId) => ipcRenderer.invoke('transfer-file', sourcePath, destPath, sourceDeviceId, destDeviceId),
-    renameFile: (path, newName, deviceId) => ipcRenderer.invoke('rename-file', path, newName, deviceId),
-    deleteFile: (path, deviceId) => ipcRenderer.invoke('delete-file', path, deviceId),
-
-    // Window Controls
+    
+    // Window controls
     minimize: () => ipcRenderer.send('window-minimize'),
     maximize: () => ipcRenderer.send('window-maximize'),
     unmaximize: () => ipcRenderer.send('window-unmaximize'),
     isMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+    
+    // File operations
+    openDownloads: () => ipcRenderer.send('open-downloads-folder'),
+    selectFile: () => ipcRenderer.invoke('select-file'),
+    trimLocalFile: (path, format, start, end) => ipcRenderer.invoke('trim-local-file', path, format, start, end),
+    clearBadge: () => ipcRenderer.send('clear-badge'),
+    
+    // Mobile Transfer
+    listDevices: () => ipcRenderer.invoke('list-devices'),
+    listLocalVolumes: () => ipcRenderer.invoke('list-local-volumes'),
+    listFiles: (path, deviceId) => ipcRenderer.invoke('list-files', path, deviceId),
+    transferFile: (source, dest, sourceId, destId) => ipcRenderer.invoke('transfer-file', source, dest, sourceId, destId),
+    deleteFile: (path, deviceId) => ipcRenderer.invoke('delete-file', path, deviceId),
+    renameFile: (path, newName, deviceId) => ipcRenderer.invoke('rename-file', path, newName, deviceId),
+    getMobilePreview: (deviceId, path) => ipcRenderer.invoke('get-mobile-preview', deviceId, path),
 
-    // Auto-updates
+    // Download events
+    download: (url, format) => ipcRenderer.send('start-download', url, format),
+    stopDownload: () => ipcRenderer.send('stop-download'),
+    onDownloadProgress: (callback) => {
+        const listener = (event, data) => callback(data);
+        ipcRenderer.on('download-progress', listener);
+        return () => ipcRenderer.removeListener('download-progress', listener);
+    },
+    onDownloadCompleted: (callback) => {
+        const listener = () => callback();
+        ipcRenderer.on('download-completed', listener);
+        return () => ipcRenderer.removeListener('download-completed', listener);
+    },
+    onDownloadError: (callback) => {
+        const listener = (event, data) => callback(data);
+        ipcRenderer.on('download-error', listener);
+        return () => ipcRenderer.removeListener('download-error', listener);
+    },
+    onInitStatus: (callback) => {
+        const listener = (event, msg) => callback(msg);
+        ipcRenderer.on('init-status', listener);
+        return () => ipcRenderer.removeListener('init-status', listener);
+    },
     onUpdateAvailable: (callback) => {
         const listener = (event, info) => callback(info);
         ipcRenderer.on('update-available', listener);

@@ -36,6 +36,7 @@ function App() {
   const [isMaximized, setIsMaximized] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState(null);
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
+  const [initStatus, setInitStatus] = useState('');
   
   // Trimmer Specific State
   const [localFile, setLocalFile] = useState(null);
@@ -70,7 +71,7 @@ function App() {
   const [queueIndex, setQueueIndex] = useState(0);
   const [queueActive, setQueueActive] = useState(false);
 
-  // Toast Helper - NO AUTO-HIDE FOR ERRORS
+  // Toast Helper
   const showToast = (message, type = 'error') => {
     setToast({ message, type });
     if (type === 'success') {
@@ -89,6 +90,12 @@ function App() {
     if (window.electron) {
       window.electron.getVersion().then(setVersion);
 
+      // Listen for initialization status
+      const removeInitListener = window.electron.onInitStatus((msg) => {
+        setInitStatus(msg);
+      });
+
+      // Listen for updates
       const removeAvailableListener = window.electron.onUpdateAvailable((info) => {
         setUpdateAvailable(info.version);
       });
@@ -105,6 +112,7 @@ function App() {
       window.addEventListener('focus', handleFocus);
 
       return () => {
+        removeInitListener();
         removeAvailableListener();
         removeDownloadedListener();
         window.removeEventListener('focus', handleFocus);
@@ -401,7 +409,7 @@ function App() {
 
       const removeErrorListener = window.electron.onDownloadError((data) => {
         cleanup();
-        setDownloadState('error');
+        setDownloadState('error'); 
         showToast(data.error || 'Download failed.');
         setDownloadMsg('Download Failed. Check logs or try again.');
       });
@@ -514,6 +522,23 @@ function App() {
       </div>
 
       <div className="main-content">
+        {initStatus && (
+          <div className="init-loading-overlay">
+            <div className="spinner-large"></div>
+            <h3>SyncWave Initializing</h3>
+            <p>{initStatus}</p>
+          </div>
+        )}
+        {error && (
+          <div className="error-popover">
+            <div className="error-content">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <span>{error}</span>
+            </div>
+            <button onClick={() => setError('')} className="error-close-btn">&times;</button>
+          </div>
+        )}
+
         {activeTab === 'downloader' && (
           <div className="tab-container">
             <div className="header-section">
