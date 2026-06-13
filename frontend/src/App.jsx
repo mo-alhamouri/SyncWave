@@ -268,8 +268,6 @@ function App() {
 
     setLoading(true);
     setMetadata(null);
-    
-    // Reset download state to idle so analyze doesn't look like a download
     setDownloadState('idle'); 
 
     try {
@@ -294,6 +292,80 @@ function App() {
       showToast(err.message || 'Error occurred while loading details.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const processQueueItem = (index, currentQueue) => {
+    if (activeEventSource.current === 'stopped') {
+      setQueueActive(false);
+      setDownloadState('idle');
+      return;
+    }
+
+    if (index >= currentQueue.length) {
+      setQueueActive(false);
+      setDownloadState('completed');
+      setDownloadMsg(`All ${currentQueue.length} downloads completed`);
+      setDownloadPercent(100);
+      return;
+    }
+
+    setQueueIndex(index);
+    const activeItem = currentQueue[index];
+    
+    if (selectedItemIds[activeItem.id] === false) {
+      const updatedQueue = [...currentQueue];
+      updatedQueue[index].status = 'skipped';
+      setQueue(updatedQueue);
+      processQueueItem(index + 1, updatedQueue);
+      return;
+    }
+    
+    const updatedQueue = [...currentQueue];
+    updatedQueue[index].status = 'downloading';
+    setQueue(updatedQueue);
+
+    setDownloadPercent(0);
+    setDownloadMsg(`[${index + 1}/${updatedQueue.length}] Processing: ${activeItem.title}`);
+    setDownloadState('downloading');
+
+    if (window.electron && window.electron.download) {
+      window.electron.download(activeItem.url, format);
+      
+      const removeProgressListener = window.electron.onDownloadProgress((data) => {
+        if (data.status === 'processing') {
+          setDownloadPercent(95);
+          setDownloadMsg(`[${index + 1}/${updatedQueue.length}] Finalizing: ${activeItem.title}`);
+          updatedQueue[index].status = 'processing';
+          setQueue([...updatedQueue]);
+        } else {
+          const progress = Math.max(10, Math.floor(data.percent || 0));
+          setDownloadPercent(progress);
+        }
+      });
+
+      const removeCompletedListener = window.electron.onDownloadCompleted(() => {
+        cleanup();
+        updatedQueue[index].status = 'completed';
+        setQueue([...updatedQueue]);
+        setTimeout(() => processQueueItem(index + 1, updatedQueue), 800);
+      });
+
+      const removeErrorListener = window.electron.onDownloadError((data) => {
+        cleanup();
+        showToast(data.error);
+        updatedQueue[index].status = 'error';
+        setQueue([...updatedQueue]);
+        setTimeout(() => processQueueItem(index + 1, updatedQueue), 1500);
+      });
+
+      const cleanup = () => {
+        removeProgressListener();
+        removeCompletedListener();
+        removeErrorListener();
+      };
+
+      activeEventSource.current = { close: () => window.electron.stopDownload() };
     }
   };
 
@@ -329,7 +401,7 @@ function App() {
 
       const removeErrorListener = window.electron.onDownloadError((data) => {
         cleanup();
-        setDownloadState('error'); // Error state keeps buttons visible but in "Retry" mode conceptually
+        setDownloadState('error');
         showToast(data.error || 'Download failed.');
         setDownloadMsg('Download Failed. Check logs or try again.');
       });
