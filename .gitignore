@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+.npm/
+package-lock.json
+
+# Local Binaries & Temporary Files
+backend/bin/
+backend/downloads/
+*.log
+
+# Build Outputs
+frontend/dist/
+dist/
+build/
+
+# IDE & System Files
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test & Debug Scripts
+verify_playlist.js
+repro_error.js
+check_entries.js
+
+# Environment & Secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
