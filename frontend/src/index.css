@@ -325,17 +325,25 @@ body {
 .export-trigger-btn-stylish:hover:not(:disabled) { transform: translateY(-2px); box-shadow: var(--accent-glow); }
 
 /* Mobile Transfer Feature Styles */
-.transfer-layout { display: flex; gap: 1.2rem; height: 640px; }
-.explorer-panel { flex: 1; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--panel-border); border-radius: 20px; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+.transfer-layout { display: flex; gap: 1.2rem; height: calc(100vh - 350px); min-height: 500px; }
+.explorer-panel { flex: 1; min-width: 0; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--panel-border); border-radius: 20px; display: flex; flex-direction: column; overflow: hidden; position: relative; }
 .explorer-header { padding: 1.2rem 1.5rem; background: rgba(255, 255, 255, 0.03); border-bottom: 1px solid var(--panel-border); display: flex; flex-direction: column; gap: 0.8rem; }
 .header-top-row { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+.header-bottom-row { display: flex; align-items: center; gap: 1rem; }
 .explorer-title { display: flex; align-items: center; gap: 0.8rem; }
 .explorer-title span { font-weight: 800; font-family: var(--font-title); font-size: 1.1rem; }
-.explorer-controls { display: flex; align-items: center; gap: 0.8rem; }
+.view-controls { display: flex; align-items: center; gap: 0.5rem; }
 .view-btn { background: rgba(255, 255, 255, 0.05); border: 1px solid var(--panel-border); color: var(--text-secondary); width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
 .view-btn:hover { background: rgba(255, 255, 255, 0.1); color: white; }
-.view-btn.active { background: var(--primary-color); border-color: var(--primary-color); color: white; }
-.path-bar { background: rgba(0, 0, 0, 0.2); border: 1px solid var(--panel-border); border-radius: 8px; padding: 0.4rem 0.8rem; font-family: monospace; font-size: 0.8rem; color: var(--secondary-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.view-btn.active { background: var(--primary-color); border-color: var(--primary-color); color: white; box-shadow: 0 0 15px rgba(124, 58, 237, 0.3); }
+
+.empty-device-state { display: flex; flex-direction: column; }
+.empty-state-container { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 3rem; text-align: center; gap: 1rem; }
+.empty-state-icon { font-size: 4rem; opacity: 0.3; margin-bottom: 1rem; }
+.empty-state-container h4 { font-family: var(--font-title); font-size: 1.2rem; color: var(--text-primary); }
+.empty-state-container p { color: var(--text-muted); font-size: 0.9rem; max-width: 250px; line-height: 1.5; }
+
+.path-bar { flex: 1; background: rgba(0, 0, 0, 0.2); border: 1px solid var(--panel-border); border-radius: 8px; padding: 0.4rem 0.8rem; font-family: monospace; font-size: 0.8rem; color: var(--secondary-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-grid { flex: 1; overflow-y: auto; background: rgba(0, 0, 0, 0.1); position: relative; }
 .grid-content { min-height: 100%; }
 .file-item { display: flex; align-items: center; padding: 0.8rem 1.2rem; gap: 1rem; cursor: pointer; transition: background 0.1s; border-bottom: 1px solid rgba(255, 255, 255, 0.02); user-select: none; }

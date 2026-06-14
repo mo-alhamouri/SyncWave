@@ -95,15 +95,22 @@ nav a:hover {
 }
 
 .btn-nav {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--panel-border);
-    padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    background: var(--primary-gradient);
     color: white !important;
+    text-decoration: none;
+    padding: 0.8rem 1.8rem;
+    border-radius: 16px;
+    font-weight: 800;
+    font-size: 1rem;
+    display: inline-block;
+    transition: transform 0.3s, box-shadow 0.3s;
+    box-shadow: 0 8px 25px rgba(139, 92, 246, 0.3);
+    border: none;
 }
 
 .btn-nav:hover {
-    background: rgba(255, 255, 255, 0.1);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 30px rgba(139, 92, 246, 0.4);
 }
 
 /* Hero */

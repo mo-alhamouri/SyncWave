@@ -370,13 +370,50 @@ const TransferTab = () => {
     const setViewMode = isDevice ? setDeviceViewMode : setLocalViewMode;
     const title = isDevice ? 'Mobile Phone' : 'Computer';
     
+    if (isDevice && !selectedDevice) {
+      return (
+        <div className="explorer-panel empty-device-state">
+           <div className="explorer-header">
+              <div className="explorer-title"><h3>{title}</h3></div>
+           </div>
+           <div className="empty-state-container">
+              <div className="empty-state-icon">📱</div>
+              <h4>No Mobile Device Connected</h4>
+              <p>Connect your Android phone via USB to start transferring files.</p>
+              <button onClick={refreshDevices} className="refresh-btn-footer">↻ Check for Devices</button>
+           </div>
+        </div>
+      );
+    }
+
     return (
-      <div className="file-explorer-section" onDragOver={onDragOver} onDrop={(e) => onDrop(e, isDevice)} onClick={() => handleEmptyClick(isDevice)}>
+      <div className="explorer-panel" onDragOver={onDragOver} onDrop={(e) => onDrop(e, isDevice)} onClick={() => handleEmptyClick(isDevice)}>
         <div className="explorer-header" onClick={e => e.stopPropagation()}>
-          <div className="explorer-title">
-            <button onClick={() => handleBack(isDevice)} className="back-btn" title="Go back" disabled={state.columns.length <= 1}>←</button>
-            <h3>{title}</h3>
-            {!isDevice && (
+          <div className="header-top-row">
+            <div className="explorer-title">
+              <button onClick={() => handleBack(isDevice)} className="back-btn" title="Go back" disabled={state.columns.length <= 1}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+              </button>
+              <span>{title}</span>
+            </div>
+            <div className="view-controls">
+              <button onClick={() => setViewMode('icons')} className={`view-btn ${viewMode === 'icons' ? 'active' : ''}`} title="Icons">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              </button>
+              <button onClick={() => setViewMode('list')} className={`view-btn ${viewMode === 'list' ? 'active' : ''}`} title="List">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              </button>
+              <button onClick={() => setViewMode('thumbnails')} className={`view-btn ${viewMode === 'thumbnails' ? 'active' : ''}`} title="Thumbnails">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              </button>
+              <button onClick={() => setViewMode('columns')} className={`view-btn ${viewMode === 'columns' ? 'active' : ''}`} title="Columns">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="3" x2="12" y2="21"/><line x1="6" y1="3" x2="6" y2="21"/><line x1="18" y1="3" x2="18" y2="21"/></svg>
+              </button>
+            </div>
+          </div>
+          
+          <div className="header-bottom-row">
+            {!isDevice ? (
                 <select 
                   value={selectedLocalVolume || ''} 
                   onChange={(e) => {
@@ -387,8 +424,7 @@ const TransferTab = () => {
                 >
                   {localVolumes.map(v => <option key={v.path} value={v.path}>{v.name}</option>)}
                 </select>
-            )}
-            {isDevice && (
+            ) : (
               <select 
                 value={selectedDevice || ''} onChange={(e) => setSelectedDevice(e.target.value)}
                 className="device-select" title="Connected USB Devices"
@@ -397,13 +433,7 @@ const TransferTab = () => {
                 {devices.map(dev => <option key={dev.id} value={dev.id}>{dev.name}</option>)}
               </select>
             )}
-          </div>
-          <div className="path-display" title={state.currentPath}>{state.currentPath || '/'}</div>
-          <div className="view-controls">
-            <button onClick={() => setViewMode('icons')} className={viewMode === 'icons' ? 'active' : ''} title="Icons">▤</button>
-            <button onClick={() => setViewMode('list')} className={viewMode === 'list' ? 'active' : ''} title="List">☰</button>
-            <button onClick={() => setViewMode('thumbnails')} className={viewMode === 'thumbnails' ? 'active' : ''} title="Thumbnails">⧉</button>
-            <button onClick={() => setViewMode('columns')} className={viewMode === 'columns' ? 'active' : ''} title="Columns">⫴</button>
+            <div className="path-bar" title={state.currentPath}>{state.currentPath || '/'}</div>
           </div>
         </div>
         
@@ -486,7 +516,7 @@ const TransferTab = () => {
         <div className="transfer-layout">
           {renderExplorer(false)}
           <div className="transfer-divider">
-            <div className="transfer-arrows" title="Drag files across panels to transfer">⇄</div>
+            <div className="transfer-arrows">⇄</div>
           </div>
           {renderExplorer(true)}
         </div>

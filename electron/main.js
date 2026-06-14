@@ -24,6 +24,7 @@ let isDev = false;
 try { isDev = !app.isPackaged; } catch (e) { isDev = false; }
 
 // --- GLOBAL STATE ---
+let autoUpdater = null;
 let ffmpegPath = '';
 let ffprobePath = '';
 let ytDlpPath = '';
@@ -35,6 +36,30 @@ let mainWindow = null;
 let currentDownloadProcess = null;
 let ytDlpWrap = null;
 let YTDlpWrap = null;
+
+// --- AUTO UPDATER LOGIC ---
+
+function setupAutoUpdater() {
+    try {
+        const { autoUpdater: updater } = require('electron-updater');
+        autoUpdater = updater;
+        
+        autoUpdater.on('checking-for-update', () => console.log('Checking for update...'));
+        autoUpdater.on('update-available', (info) => {
+            console.log('Update available:', info);
+            if (mainWindow) mainWindow.webContents.send('update-available', info);
+        });
+        autoUpdater.on('update-not-available', (info) => console.log('Update not available:', info));
+        autoUpdater.on('error', (err) => console.error('Error in auto-updater:', err));
+        autoUpdater.on('download-progress', (progressObj) => console.log('Download progress:', progressObj));
+        autoUpdater.on('update-downloaded', (info) => {
+            console.log('Update downloaded:', info);
+            if (mainWindow) mainWindow.webContents.send('update-downloaded', info);
+        });
+
+        autoUpdater.checkForUpdatesAndNotify();
+    } catch (e) { console.error('AutoUpdater setup failed:', e); }
+}
 
 // --- BINARY MANAGEMENT (THE ENGINE) ---
 
@@ -172,6 +197,14 @@ async function ensureBinaries() {
 // --- IPC HANDLERS ---
 
 ipcMain.handle('get-version', () => app.getVersion());
+ipcMain.handle('check-for-updates', async () => {
+    if (!autoUpdater) return { error: 'Updater not initialized' };
+    try {
+        const result = await autoUpdater.checkForUpdates();
+        return result ? result.updateInfo : { version: app.getVersion() };
+    } catch (e) { return { error: e.message }; }
+});
+ipcMain.on('quit-and-install', () => { if (autoUpdater) autoUpdater.quitAndInstall(); });
 ipcMain.on('window-minimize', () => mainWindow && mainWindow.minimize());
 ipcMain.on('window-maximize', () => mainWindow && mainWindow.maximize());
 ipcMain.on('window-unmaximize', () => mainWindow && mainWindow.unmaximize());
@@ -373,7 +406,8 @@ ipcMain.handle('select-file', async () => {
 
 ipcMain.handle('trim-local-file', async (event, filePath, format, startTime, endTime) => {
     const ext = format.toLowerCase().includes('mp3') ? 'mp3' : 'mp4';
-    const outputName = `trimmed_${Date.now()}.${ext}`;
+    const originalName = path.basename(filePath, path.extname(filePath));
+    const outputName = `${originalName} Trimmed.${ext}`;
     const outputPath = path.join(finalDownloadsDir, outputName);
     
     return new Promise((resolve) => {
@@ -406,7 +440,7 @@ app.whenReady().then(async () => {
         if (!fs.existsSync(tempDownloadsDir)) fs.mkdirSync(tempDownloadsDir, { recursive: true });
 
         try { require('fix-path')(); } catch (e) {}
-        try { autoUpdater = require('electron-updater').autoUpdater; } catch (e) {}
+        setupAutoUpdater();
         try { 
             const wrapModule = require('yt-dlp-wrap');
             YTDlpWrap = wrapModule.default || wrapModule;
