@@ -438,11 +438,20 @@ function App() {
 
   const checkUpdates = async () => {
     if (window.electron) {
-      const update = await window.electron.checkUpdates();
-      if (update && update.version !== `v${version}`) {
-        alert(`New version ${update.version} available! Download it at: ${update.url}`);
-      } else {
-        alert('You are on the latest version.');
+      try {
+        const update = await window.electron.checkUpdates();
+        if (update.error) {
+          showToast(`Update check failed: ${update.error}`);
+          return;
+        }
+        
+        if (update.available) {
+          alert(`New version ${update.version} available! Download it at: ${update.url}`);
+        } else {
+          alert('You have the latest version installed.');
+        }
+      } catch (err) {
+        showToast('Update check failed. Please try again later.');
       }
     }
   };

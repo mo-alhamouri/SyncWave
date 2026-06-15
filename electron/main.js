@@ -201,8 +201,19 @@ ipcMain.handle('check-for-updates', async () => {
     if (!autoUpdater) return { error: 'Updater not initialized' };
     try {
         const result = await autoUpdater.checkForUpdates();
-        return result ? result.updateInfo : { version: app.getVersion() };
-    } catch (e) { return { error: e.message }; }
+        if (result && result.updateInfo) {
+            const isNew = result.updateInfo.version !== app.getVersion();
+            return {
+                available: isNew,
+                version: result.updateInfo.version,
+                url: 'https://github.com/mo-alhamouri/SyncWave/releases/latest'
+            };
+        }
+        return { available: false };
+    } catch (e) { 
+        console.error('Update check failed:', e);
+        return { error: e.message }; 
+    }
 });
 ipcMain.on('quit-and-install', () => { if (autoUpdater) autoUpdater.quitAndInstall(); });
 ipcMain.on('window-minimize', () => mainWindow && mainWindow.minimize());
