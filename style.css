@@ -364,6 +364,67 @@ nav a:hover {
     color: var(--text-secondary);
 }
 
+/* How To Section */
+.how-to {
+    padding: 100px 0;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.steps-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 3rem;
+    margin-top: 2rem;
+}
+
+.step-card {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 24px;
+    padding: 2rem;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    transition: transform 0.3s ease;
+}
+
+.step-card:hover {
+    transform: translateY(-5px);
+    border-color: var(--primary-color);
+}
+
+.step-number {
+    position: absolute;
+    top: -1.5rem;
+    left: 2rem;
+    background: var(--primary-gradient);
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-title);
+    font-weight: 800;
+    font-size: 1.2rem;
+    box-shadow: 0 10px 20px rgba(139, 92, 246, 0.3);
+}
+
+.step-image {
+    width: 100%;
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.step-card p {
+    font-size: 1rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    line-height: 1.5;
+}
+
 /* Footer */
 .footer {
     padding: 80px 0;
