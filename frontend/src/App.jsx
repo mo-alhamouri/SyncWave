@@ -436,6 +436,10 @@ function App() {
     setDownloadMsg('Process stopped by user.');
   };
 
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [isDownloadingUpdate, setIsDownloadingUpdate] = useState(false);
+
   const checkUpdates = async () => {
     if (window.electron) {
       try {
@@ -446,7 +450,8 @@ function App() {
         }
         
         if (update.available) {
-          alert(`New version ${update.version} available! Download it at: ${update.url}`);
+          setUpdateInfo(update);
+          setShowUpdateModal(true);
         } else {
           alert('You have the latest version installed.');
         }
@@ -456,10 +461,42 @@ function App() {
     }
   };
 
+  const handleDownloadUpdate = () => {
+    setIsDownloadingUpdate(true);
+    showToast('Starting download...');
+  };
+
+  const UpdateModal = ({ info, onClose }) => (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="update-modal" onClick={e => e.stopPropagation()}>
+        <button className="modal-close" onClick={onClose}>&times;</button>
+        <div className="modal-content">
+          <div className="update-icon">🚀</div>
+          <h2>Update Available</h2>
+          <p>A new version <strong>{info.version}</strong> is available.</p>
+          <p className="update-details">Would you like to download and install the update now?</p>
+          <div className="modal-actions">
+            <button 
+              className="btn-primary-stylish" 
+              onClick={handleDownloadUpdate}
+              disabled={isDownloadingUpdate}
+            >
+              {isDownloadingUpdate ? 'Downloading...' : 'Download Now'}
+            </button>
+            <button className="btn-secondary-stylish" onClick={onClose}>Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   const isDownloading = downloadState !== 'idle' && downloadState !== 'completed' && downloadState !== 'error';
 
   return (
     <div className="app-shell">
+      {showUpdateModal && updateInfo && (
+        <UpdateModal info={updateInfo} onClose={() => setShowUpdateModal(false)} />
+      )}
       {toast && (
         <div className={`toast-notification ${toast.type}`}>
           <div className="toast-content">
