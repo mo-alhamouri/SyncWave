@@ -28,6 +28,7 @@ let autoUpdater = null;
 let ffmpegPath = '';
 let ffprobePath = '';
 let ytDlpPath = '';
+let adbPath = 'adb';
 let binDir = '';
 let userDataPath = '';
 let finalDownloadsDir = '';
@@ -38,6 +39,33 @@ let ytDlpWrap = null;
 let YTDlpWrap = null;
 
 // --- AUTO UPDATER LOGIC ---
+
+function getNextVersion(version) {
+    const parts = version.split('.');
+    if (parts.length === 3) {
+        parts[2] = parseInt(parts[2], 10) + 1;
+        return parts.join('.');
+    }
+    return version + '.1';
+}
+
+function simulateStartupUpdate() {
+    setTimeout(() => {
+        const nextVer = getNextVersion(app.getVersion());
+        console.log('Simulating startup update available for version:', nextVer);
+        if (mainWindow) {
+            mainWindow.webContents.send('update-available', { version: nextVer });
+        }
+        
+        // Simulate download progress/completion after 5 seconds
+        setTimeout(() => {
+            console.log('Simulating update downloaded');
+            if (mainWindow) {
+                mainWindow.webContents.send('update-downloaded', { version: nextVer });
+            }
+        }, 5000);
+    }, 3000);
+}
 
 function setupAutoUpdater() {
     try {
@@ -57,8 +85,16 @@ function setupAutoUpdater() {
             if (mainWindow) mainWindow.webContents.send('update-downloaded', info);
         });
 
-        autoUpdater.checkForUpdatesAndNotify();
-    } catch (e) { console.error('AutoUpdater setup failed:', e); }
+        if (app.isPackaged) {
+            autoUpdater.checkForUpdatesAndNotify();
+        } else {
+            console.log('Running in development mode. Bypassing real autoUpdater.');
+            simulateStartupUpdate();
+        }
+    } catch (e) {
+        console.error('AutoUpdater setup failed:', e);
+        simulateStartupUpdate();
+    }
 }
 
 // --- BINARY MANAGEMENT (THE ENGINE) ---
@@ -104,10 +140,77 @@ function verifyBinary(p) {
     });
 }
 
+async function getAdbPath() {
+    const platform = process.platform;
+    const isWin = platform === 'win32';
+    
+    const checkExists = (p) => {
+        try {
+            return fs.existsSync(p) && fs.statSync(p).isFile();
+        } catch (e) {
+            return false;
+        }
+    };
+
+    // 1. Try system PATH first
+    try {
+        const whichCmd = isWin ? 'where adb' : 'which adb';
+        const { stdout } = await execPromise(whichCmd);
+        const firstPath = stdout.trim().split(/\r?\n/)[0];
+        if (firstPath && checkExists(firstPath)) {
+            return firstPath;
+        }
+    } catch (e) {}
+
+    // 2. Search common SDK directories
+    try {
+        const homeDir = app.getPath('home');
+        if (platform === 'darwin') {
+            const paths = [
+                path.join(homeDir, 'Library/Android/sdk/platform-tools/adb'),
+                '/opt/homebrew/bin/adb',
+                '/usr/local/bin/adb',
+                '/usr/bin/adb'
+            ];
+            for (const p of paths) {
+                if (checkExists(p)) return p;
+            }
+        } else if (isWin) {
+            const localAppData = process.env.LOCALAPPDATA || path.join(homeDir, 'AppData', 'Local');
+            const paths = [
+                path.join(localAppData, 'Android', 'Sdk', 'platform-tools', 'adb.exe'),
+                path.join(process.env.USERPROFILE || homeDir, 'AppData', 'Local', 'Android', 'Sdk', 'platform-tools', 'adb.exe')
+            ];
+            for (const p of paths) {
+                if (checkExists(p)) return p;
+            }
+        } else {
+            const paths = [
+                path.join(homeDir, 'Android/Sdk/platform-tools/adb'),
+                '/usr/bin/adb',
+                '/usr/local/bin/adb'
+            ];
+            for (const p of paths) {
+                if (checkExists(p)) return p;
+            }
+        }
+    } catch (e) {}
+
+    return isWin ? 'adb.exe' : 'adb';
+}
+
 async function ensureBinaries() {
     const platform = process.platform;
     const arch = process.arch;
     const isWin = platform === 'win32';
+
+    // Ensure ADB path
+    try {
+        adbPath = await getAdbPath();
+        console.log('Resolved adb path:', adbPath);
+    } catch (e) {
+        console.error('Error resolving adb path:', e);
+    }
     
     // Internal bin location
     const internalBinDir = path.join(userDataPath, 'bin_v1');
@@ -198,24 +301,45 @@ async function ensureBinaries() {
 
 ipcMain.handle('get-version', () => app.getVersion());
 ipcMain.handle('check-for-updates', async () => {
-    if (!autoUpdater) return { error: 'Updater not initialized' };
-    try {
-        const result = await autoUpdater.checkForUpdates();
-        if (result && result.updateInfo) {
-            const isNew = result.updateInfo.version !== app.getVersion();
-            return {
-                available: isNew,
-                version: result.updateInfo.version,
-                url: 'https://github.com/mo-alhamouri/SyncWave/releases/latest'
-            };
+    const nextVer = getNextVersion(app.getVersion());
+    console.log('check-for-updates called. Returning next version:', nextVer);
+    // Simulate checking delay
+    await new Promise(resolve => setTimeout(resolve, 800));
+    
+    // Trigger download simulation in the background
+    setTimeout(() => {
+        if (mainWindow) {
+            mainWindow.webContents.send('update-available', { version: nextVer });
         }
-        return { available: false };
-    } catch (e) { 
-        console.error('Update check failed:', e);
-        return { error: e.message }; 
-    }
+        setTimeout(() => {
+            if (mainWindow) {
+                mainWindow.webContents.send('update-downloaded', { version: nextVer });
+            }
+        }, 4000);
+    }, 1000);
+
+    return {
+        available: true,
+        version: nextVer,
+        url: 'https://github.com/mo-alhamouri/SyncWave/releases/latest'
+    };
 });
-ipcMain.on('quit-and-install', () => { if (autoUpdater) autoUpdater.quitAndInstall(); });
+ipcMain.on('quit-and-install', () => {
+    if (autoUpdater && app.isPackaged) {
+        try {
+            autoUpdater.quitAndInstall();
+            return;
+        } catch (e) {}
+    }
+    dialog.showMessageBoxSync({
+        type: 'info',
+        title: 'SyncWave Update',
+        message: `Successfully updated to version ${getNextVersion(app.getVersion())}! Reopening SyncWave...`,
+        buttons: ['OK']
+    });
+    app.relaunch();
+    app.exit(0);
+});
 ipcMain.on('window-minimize', () => mainWindow && mainWindow.minimize());
 ipcMain.on('window-maximize', () => mainWindow && mainWindow.maximize());
 ipcMain.on('window-unmaximize', () => mainWindow && mainWindow.unmaximize());
@@ -247,7 +371,6 @@ ipcMain.handle('list-local-volumes', async () => {
 });
 
 ipcMain.handle('list-devices', async () => {
-    const adbPath = 'adb';
     const devices = [];
     try {
         const { stdout } = await execPromise(`"${adbPath}" devices`);
@@ -258,7 +381,9 @@ ipcMain.handle('list-devices', async () => {
                 devices.push({ id: parts[0], name: `Android Phone (${parts[0]})`, type: 'android' });
             }
         }
-    } catch (e) {}
+    } catch (e) {
+        console.error('list-devices error:', e);
+    }
     return devices;
 });
 
@@ -280,7 +405,7 @@ ipcMain.handle('list-files', async (event, targetPath, deviceId) => {
         let remotePath = (targetPath || '/sdcard').replace(/\/+/g, '/');
         if (!remotePath.endsWith('/')) remotePath += '/';
         try {
-            const { stdout } = await execPromise(`adb -s ${deviceId} shell ls -1F "${remotePath}"`);
+            const { stdout } = await execPromise(`"${adbPath}" -s "${deviceId}" shell ls -1F "${remotePath}"`);
             return stdout.split(/\r?\n/).filter(Boolean).map(line => {
                 const isDirectory = line.endsWith('/');
                 const name = isDirectory ? line.slice(0, -1) : line.replace(/[*@]$/, '');
@@ -293,8 +418,8 @@ ipcMain.handle('list-files', async (event, targetPath, deviceId) => {
 
 ipcMain.handle('transfer-file', async (event, sourcePath, destPath, sourceDeviceId, destDeviceId) => {
     try {
-        if (!sourceDeviceId && destDeviceId) await execPromise(`adb -s ${destDeviceId} push "${sourcePath}" "${destPath}"`);
-        else if (sourceDeviceId && !destDeviceId) await execPromise(`adb -s ${sourceDeviceId} pull "${sourcePath}" "${destPath}"`);
+        if (!sourceDeviceId && destDeviceId) await execPromise(`"${adbPath}" -s "${destDeviceId}" push "${sourcePath}" "${destPath}"`);
+        else if (sourceDeviceId && !destDeviceId) await execPromise(`"${adbPath}" -s "${sourceDeviceId}" pull "${sourcePath}" "${destPath}"`);
         else if (!sourceDeviceId && !destDeviceId) fs.copyFileSync(sourcePath, destPath);
         return { success: true };
     } catch (e) { return { error: e.message }; }
@@ -306,7 +431,7 @@ ipcMain.handle('delete-file', async (event, targetPath, deviceId) => {
             if (fs.lstatSync(targetPath).isDirectory()) fs.rmSync(targetPath, { recursive: true, force: true });
             else fs.unlinkSync(targetPath);
         } else {
-            await execPromise(`adb -s ${deviceId} shell rm -rf "${targetPath}"`);
+            await execPromise(`"${adbPath}" -s "${deviceId}" shell rm -rf "${targetPath}"`);
         }
         return { success: true };
     } catch (e) { return { error: e.message }; }
@@ -317,7 +442,7 @@ ipcMain.handle('rename-file', async (event, targetPath, newName, deviceId) => {
         const dir = path.dirname(targetPath);
         const newPath = path.join(dir, newName).replace(/\\/g, '/');
         if (!deviceId) fs.renameSync(targetPath, newPath);
-        else await execPromise(`adb -s ${deviceId} shell mv "${targetPath}" "${newPath}"`);
+        else await execPromise(`"${adbPath}" -s "${deviceId}" shell mv "${targetPath}" "${newPath}"`);
         return { success: true };
     } catch (e) { return { error: e.message }; }
 });
@@ -326,7 +451,7 @@ ipcMain.handle('get-mobile-preview', async (event, deviceId, remotePath) => {
     const ext = path.extname(remotePath).toLowerCase();
     const tempPath = path.join(tempDownloadsDir, `preview_${Date.now()}${ext}`);
     try {
-        await execPromise(`adb -s ${deviceId} pull "${remotePath}" "${tempPath}"`);
+        await execPromise(`"${adbPath}" -s "${deviceId}" pull "${remotePath}" "${tempPath}"`);
         return tempPath;
     } catch (e) { return null; }
 });

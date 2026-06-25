@@ -1,6 +1,6 @@
 {
   "name": "syncwave-desktop",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "main": "electron/main.js",
   "scripts": {
     "setup": "npm install && npm run setup:backend && npm run setup:frontend",
@@ -11,7 +11,8 @@
     "start": "electron .",
     "build:frontend": "npm run build --prefix frontend",
     "dist": "npm run build:frontend && electron-builder",
-    "deploy": "gh-pages -d \"Marketing Website\""
+    "deploy": "gh-pages -d \"Marketing Website\"",
+    "check-token": "node -e \"console.log(process.env.GH_TOKEN || process.env.GITHUB_TOKEN || 'No Token')\""
   },
   "build": {
     "appId": "com.syncwave.app",
