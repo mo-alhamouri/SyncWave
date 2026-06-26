@@ -4,10 +4,17 @@ import { createWindow } from './windowCreator';
 import { setupAutoUpdater } from './updater';
 import { init } from './init';
 
+let mainWindow = null;
+
 async function initializeApp() {
   try {
     await init();
-    const mainWindow = createWindow();
+    mainWindow = createWindow();
+    if (!mainWindow) {
+      console.error('Failed to create main window');
+      app.exit(1);
+    }
+    mainWindow.show();
     setupAutoUpdater(mainWindow);
   } catch (err) {
     console.error('Error initializing SyncWave:', err);
