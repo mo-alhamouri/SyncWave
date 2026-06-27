@@ -34,3 +34,8 @@ A professional, high-performance **Media Management Application**. Built with Re
 
 ## 📜 License
 MIT
+
+
+ macOS Installation Troubleshooting
+If macOS says "SyncWave is damaged and can’t be opened" or "Developer cannot be verified", open your terminal and run this command to bypass Gatekeeper:
+xattr -cr /Applications/SyncWave.app

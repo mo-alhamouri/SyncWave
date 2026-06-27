@@ -116,7 +116,28 @@ function downloadFile(url, dest) {
                 file.on('finish', () => {
                     file.close(() => {
                         try {
+                            // Ensure executable permissions
                             fs.chmodSync(dest, '755');
+                            
+                            // DEFINITIVE MAC OS QUARANTINE FIX FOR DOWNLOADED BINARIES
+                            if (process.platform === 'darwin') {
+                                exec(`xattr -d com.apple.quarantine "${dest}" 2>/dev/null || true`, () => {
+                                    resolve();
+                                });
+                            } else {
+                                resolve();
+                            }
+                        } catch (e) { reject(e); }
+                    });
+                });
+            }).on('error', (err) => {
+                fs.unlink(dest, () => {});
+                reject(err);
+            });
+        };
+        request(url);
+    });
+}
                             
                             // macOS quarantine bypass for downloaded helper binaries
                             if (process.platform === 'darwin') {
@@ -272,6 +293,10 @@ async function ensureBinaries() {
                 fs.copyFileSync(bundledFfprobe, ffprobePath);
                 fs.chmodSync(ffmpegPath, '755');
                 fs.chmodSync(ffprobePath, '755');
+                
+            if (process.platform === 'darwin') {
+                exec(`xattr -d com.apple.quarantine "${ffmpegPath}" "${ffprobePath}" "${ytDlpPath}" 2>/dev/null || true`);
+                }
                 
                 // macOS quarantine bypass for copied helper binaries
                 if (platform === 'darwin') {
