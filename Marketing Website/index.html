@@ -56,10 +56,10 @@
                           const release = await response.json();
                           const tagName = release.tag_name; // e.g. "v1.2.4"
                           
-                          // Look for macOS DMG or ZIP asset
-                          const macAsset = release.assets.find(asset =>
-                            asset.name.endsWith(".dmg") || asset.name.endsWith(".zip")
-                          );
+                          // Search for ZIP first, fallback to DMG if ZIP isn't found
+                          const macAsset = release.assets.find(asset => asset.name.endsWith(".zip")) 
+                                        || release.assets.find(asset => asset.name.endsWith(".dmg")
+                           );
 
                           if (macAsset) {
                             downloadBtn.href = macAsset.browser_download_url;
