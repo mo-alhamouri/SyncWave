@@ -8,8 +8,8 @@ const execPromise = util.promisify(exec);
 
 // 1. ABSOLUTE TOP-LEVEL ERROR HANDLING
 function reportError(title, error) {
-    const message = error instanceof Error ? 
-        `${error.message}\n\nStack:\n${error.stack}` : 
+    const message = error instanceof Error ?
+        `${error.message}\n\nStack:\n${error.stack}` :
         `Non-Error thrown: ${JSON.stringify(error) || String(error)}`;
     console.error(title, error);
     if (dialog && dialog.showErrorBox) {
@@ -117,6 +117,16 @@ function downloadFile(url, dest) {
                     file.close(() => {
                         try {
                             fs.chmodSync(dest, '755');
+                            
+                            // macOS quarantine bypass for downloaded helper binaries
+                            if (process.platform === 'darwin') {
+                                try {
+                                    require('child_process').execSync(`xattr -d com.apple.quarantine "${dest}" 2>/dev/null || true`);
+                                } catch (err) {
+                                    console.log('Quarantine removal skipped or not needed for:', dest);
+                                }
+                            }
+                            
                             resolve();
                         } catch (e) { reject(e); }
                     });
@@ -262,6 +272,14 @@ async function ensureBinaries() {
                 fs.copyFileSync(bundledFfprobe, ffprobePath);
                 fs.chmodSync(ffmpegPath, '755');
                 fs.chmodSync(ffprobePath, '755');
+                
+                // macOS quarantine bypass for copied helper binaries
+                if (platform === 'darwin') {
+                    try {
+                        require('child_process').execSync(`xattr -d com.apple.quarantine "${ffmpegPath}" "${ffprobePath}" 2>/dev/null || true`);
+                    } catch (err) {}
+                }
+                
                 ready = true;
             }
         } else {
@@ -511,7 +529,7 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
                     const oldPath = path.join(tempDownloadsDir, file);
                     const newPath = path.join(finalDownloadsDir, file);
                     const isTarget = (format === 'mp3-320' && file.endsWith('.mp3')) || (format !== 'mp3-320' && file.endsWith('.mp4'));
-                    if (isTarget) { 
+                    if (isTarget) {
                         if (fs.existsSync(oldPath)) {
                             fs.renameSync(oldPath, newPath);
                             moved = true;
@@ -523,8 +541,8 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
                     if (mainWindow) mainWindow.webContents.send('download-completed');
                     if (process.platform === 'darwin') app.setBadgeCount(app.getBadgeCount() + 1);
                 } else if (mainWindow) {
-                    mainWindow.webContents.send('download-error', { 
-                        error: code !== 0 ? `Download failed (Code ${code}).` : 'No valid output file was found.' 
+                    mainWindow.webContents.send('download-error', {
+                        error: code !== 0 ? `Download failed (Code ${code}).` : 'No valid output file was found.'
                     });
                 }
             } catch (e) { if (mainWindow) mainWindow.webContents.send('download-error', { error: 'Finalizing failed: ' + e.message }); }
@@ -577,7 +595,7 @@ app.whenReady().then(async () => {
 
         try { require('fix-path')(); } catch (e) {}
         setupAutoUpdater();
-        try { 
+        try {
             const wrapModule = require('yt-dlp-wrap');
             YTDlpWrap = wrapModule.default || wrapModule;
         } catch (e) {}
