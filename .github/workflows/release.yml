@@ -1,0 +1,63 @@
+name: Build and Publish Release
+
+on:
+  push:
+    tags:
+      - 'v*' # Triggers whenever you push a tag starting with 'v' (e.g. v1.2.4)
+
+jobs:
+  release:
+    name: Build & Release SyncWave
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        # Build for both macOS and Windows on their native environments
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Frontend Dependencies
+        run: |
+          if [ -f package.json ]; then
+            npm install
+          fi
+        shell: bash
+
+      - name: Build Frontend Assets
+        run: |
+          if npm run | grep -q "build"; then
+            npm run build
+          fi
+        shell: bash
+
+      # Install Electron app dependencies & compile native packages
+      - name: Install Electron dependencies
+        run: |
+          cd electron # Change this to the folder containing your Electron code if needed
+          npm install
+        shell: bash
+
+      # Compile and package the app for distribution using electron-builder
+      - name: Build & Publish Electron App
+        uses: samuelmeuli/action-electron-builder@v1
+        with:
+          # Your GitHub token is automatically supplied securely by GitHub
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          
+          # Changes directory to where your Electron codebase resides
+          package_root: 'electron' 
+          
+          # Instructs electron-builder to build for the active OS and publish
+          args: --publish always
+        env:
+          # Required for code signing or release management
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
