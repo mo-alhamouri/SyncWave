@@ -32,3 +32,4 @@ check_entries.js
 .env.test.local
 .env.production.local
 dist_electron/
+.aider*
