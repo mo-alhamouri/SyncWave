@@ -12,8 +12,8 @@ jobs:
 
     strategy:
       matrix:
-        # Build for both macOS and Windows on their native environments
-        os: [macos-latest, windows-latest]
+        # Removed macos-latest to bypass the queue
+        os: [windows-latest, ubuntu-latest]
 
     steps:
       - name: Checkout Repository
