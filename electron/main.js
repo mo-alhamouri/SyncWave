@@ -119,26 +119,6 @@ function downloadFile(url, dest) {
                             // Ensure executable permissions
                             fs.chmodSync(dest, '755');
                             
-                            // DEFINITIVE MAC OS QUARANTINE FIX FOR DOWNLOADED BINARIES
-                            if (process.platform === 'darwin') {
-                                exec(`xattr -d com.apple.quarantine "${dest}" 2>/dev/null || true`, () => {
-                                    resolve();
-                                });
-                            } else {
-                                resolve();
-                            }
-                        } catch (e) { reject(e); }
-                    });
-                });
-            }).on('error', (err) => {
-                fs.unlink(dest, () => {});
-                reject(err);
-            });
-        };
-        request(url);
-    });
-}
-                            
                             // macOS quarantine bypass for downloaded helper binaries
                             if (process.platform === 'darwin') {
                                 try {
