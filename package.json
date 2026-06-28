@@ -1,6 +1,6 @@
 {
   "name": "syncwave-desktop",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "main": "electron/main.js",
   "scripts": {
     "setup": "npm install && npm run setup:backend && npm run setup:frontend",
