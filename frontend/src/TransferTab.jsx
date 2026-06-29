@@ -475,6 +475,14 @@ const TransferTab = () => {
                             const src = mobilePreviews[quickLookFile.path] ? `media://${mobilePreviews[quickLookFile.path]}` : `media://${quickLookFile.path}`;
                             if (ext === '.mp4' || ext === '.mov') return <video src={src} controls autoPlay />;
                             if (['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) return <img src={src} alt="" />;
+                            if (['.mp3', '.wav', '.m4a', '.ogg', '.flac'].includes(ext)) {
+                                return (
+                                    <div className="quick-look-audio-preview" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2rem' }}>
+                                        <div className="quick-look-placeholder" style={{ margin: 0, fontSize: '10rem', opacity: 0.2 }}>🎵</div>
+                                        <audio src={src} controls autoPlay style={{ width: '400px' }} />
+                                    </div>
+                                );
+                            }
                             return <div className="quick-look-placeholder">📄</div>;
                         })()
                     )}
