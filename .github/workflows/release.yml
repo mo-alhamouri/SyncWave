@@ -28,7 +28,7 @@ jobs:
       - name: Install Frontend Dependencies
         run: |
           if [ -f package.json ]; then
-            npm install
+            npm run setup
           fi
         shell: bash
 
