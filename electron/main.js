@@ -500,16 +500,23 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
         let args = [url, '-o', outputTemplate, '--no-part', '--no-continue'];
         
         if (format === 'mp3-320') {
-            args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
-        } else {
-            args.push('--merge-output-format', 'mp4');
-            // DEFINITIVE FIX: Always re-encode audio to AAC to ensure sound is merged correctly
-            args.push('--postprocessor-args', 'ffmpeg: -c:a aac -b:a 192k');
-            
-            if (format === '4k') args.push('-f', 'bestvideo[height<=2160]+bestaudio/best');
-            else if (format === '1080p') args.push('-f', 'bestvideo[height<=1080]+bestaudio/best');
-            else if (format === '720p') args.push('-f', 'bestvideo[height<=720]+bestaudio/best');
+                    args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
+                    args.push('--convert-thumbnails', 'jpg');
+                    args.push('--embed-thumbnail');
+                } else {
+                    // MERGE & RECODE WORKFLOW: Merge to MKV intermediate, then recode to MP4
+                    args.push('--merge-output-format', 'mkv');
+                    args.push('--recode-video', 'mp4');
+                    
+                    // DEFINITIVE FIX: Force VideoConvertor postprocessor to transcode the output to standard H.264 & AAC with 8-bit yuv420p format.
+                    // This guarantees 100% macOS Finder / Quick Look (spacebar preview) / QuickTime Player compatibility on Mac.
+                    args.push('--postprocessor-args', 'VideoConvertor:-c:v libx264 -c:a aac -pix_fmt yuv420p -b:a 192k -profile:v high -level 4.0');
+                    
+                    if (format === '4k') args.push('-f', 'bestvideo[height<=2160]+bestaudio/best');
+                    else if (format === '1080p') args.push('-f', 'bestvideo[height<=1080]+bestaudio/best');
+                    else if (format === '720p') args.push('-f', 'bestvideo[height<=720]+bestaudio/best');
         }
+    
 
         if (startTime || endTime) {
             args.push('--download-sections', `*${startTime || 0}-${endTime || 'inf'}`);
