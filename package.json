@@ -1,6 +1,6 @@
 {
   "name": "syncwave-desktop",
-  "version": "1.2.4",
+  "version": "1.2.6",
   "main": "electron/main.js",
   "scripts": {
     "setup": "npm install && npm run setup:backend && npm run setup:frontend",
@@ -9,7 +9,8 @@
     "dev:frontend": "npm run dev --prefix frontend",
     "dev": "concurrently --kill-others \"npm run dev:frontend\" \"wait-on http://localhost:5173 && electron .\"",
     "start": "electron .",
-    "build:frontend": "npm run build --prefix frontend",
+    "build": "npm run build:frontend",
+    "build:frontend": "npm install --prefix frontend && npm run build --prefix frontend",
     "dist": "npm run build:frontend && electron-builder",
     "deploy": "gh-pages -d \"Marketing Website\"",
     "check-token": "node -e \"console.log(process.env.GH_TOKEN || process.env.GITHUB_TOKEN || 'No Token')\""
@@ -44,6 +45,13 @@
       "target": [
         {
           "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "x64",
             "arm64"
