@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import TransferTab from './TransferTab';
 
 // Helper to format duration in seconds to MM:SS or HH:MM:SS
 function formatDuration(seconds) {
@@ -509,7 +508,6 @@ function App() {
       <div className="sidebar">
         <div className="sidebar-drag-area"></div>
         <div className="sidebar-logo">
-          <div className="logo-icon">🌊</div>
           <span>SyncWave</span>
         </div>
         
@@ -540,13 +538,6 @@ function App() {
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3v12"/><path d="M18 9v12"/><path d="M2 12h20"/><path d="M6 12v6a2 2 0 0 0 2 2h12"/></svg>
             Clip Trimmer
-          </button>
-          <button 
-            className={`nav-item ${activeTab === 'transfer' ? 'active' : ''}`}
-            onClick={() => setActiveTab('transfer')}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/><rect x="2" y1="17" width="20" height="4" rx="2"/></svg>
-            Mobile Transfer
           </button>
         </nav>
 
@@ -803,7 +794,6 @@ function App() {
           </div>
         )}
 
-        {activeTab === 'transfer' && <TransferTab />}
       </div>
     </div>
   );
