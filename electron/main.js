@@ -28,13 +28,13 @@ let autoUpdater = null;
 let ffmpegPath = '';
 let ffprobePath = '';
 let ytDlpPath = '';
-let adbPath = 'adb';
 let binDir = '';
 let userDataPath = '';
 let finalDownloadsDir = '';
 let tempDownloadsDir = '';
 let mainWindow = null;
 let currentDownloadProcess = null;
+let isStoppedByUser = false;
 let ytDlpWrap = null;
 let YTDlpWrap = null;
 
@@ -151,77 +151,10 @@ function verifyBinary(p) {
     });
 }
 
-async function getAdbPath() {
-    const platform = process.platform;
-    const isWin = platform === 'win32';
-    
-    const checkExists = (p) => {
-        try {
-            return fs.existsSync(p) && fs.statSync(p).isFile();
-        } catch (e) {
-            return false;
-        }
-    };
-
-    // 1. Try system PATH first
-    try {
-        const whichCmd = isWin ? 'where adb' : 'which adb';
-        const { stdout } = await execPromise(whichCmd);
-        const firstPath = stdout.trim().split(/\r?\n/)[0];
-        if (firstPath && checkExists(firstPath)) {
-            return firstPath;
-        }
-    } catch (e) {}
-
-    // 2. Search common SDK directories
-    try {
-        const homeDir = app.getPath('home');
-        if (platform === 'darwin') {
-            const paths = [
-                path.join(homeDir, 'Library/Android/sdk/platform-tools/adb'),
-                '/opt/homebrew/bin/adb',
-                '/usr/local/bin/adb',
-                '/usr/bin/adb'
-            ];
-            for (const p of paths) {
-                if (checkExists(p)) return p;
-            }
-        } else if (isWin) {
-            const localAppData = process.env.LOCALAPPDATA || path.join(homeDir, 'AppData', 'Local');
-            const paths = [
-                path.join(localAppData, 'Android', 'Sdk', 'platform-tools', 'adb.exe'),
-                path.join(process.env.USERPROFILE || homeDir, 'AppData', 'Local', 'Android', 'Sdk', 'platform-tools', 'adb.exe')
-            ];
-            for (const p of paths) {
-                if (checkExists(p)) return p;
-            }
-        } else {
-            const paths = [
-                path.join(homeDir, 'Android/Sdk/platform-tools/adb'),
-                '/usr/bin/adb',
-                '/usr/local/bin/adb'
-            ];
-            for (const p of paths) {
-                if (checkExists(p)) return p;
-            }
-        }
-    } catch (e) {}
-
-    return isWin ? 'adb.exe' : 'adb';
-}
-
 async function ensureBinaries() {
     const platform = process.platform;
     const arch = process.arch;
     const isWin = platform === 'win32';
-
-    // Ensure ADB path
-    try {
-        adbPath = await getAdbPath();
-        console.log('Resolved adb path:', adbPath);
-    } catch (e) {
-        console.error('Error resolving adb path:', e);
-    }
     
     // Internal bin location
     const internalBinDir = path.join(userDataPath, 'bin_v1');
@@ -370,115 +303,6 @@ ipcMain.handle('window-is-maximized', () => mainWindow ? mainWindow.isMaximized(
 ipcMain.on('open-downloads-folder', () => shell.openPath(finalDownloadsDir));
 ipcMain.on('clear-badge', () => { if (process.platform === 'darwin') app.setBadgeCount(0); });
 
-ipcMain.handle('list-local-volumes', async () => {
-    const volumes = [
-        { name: 'Home', path: app.getPath('home'), type: 'home' },
-        { name: 'Desktop', path: app.getPath('desktop'), type: 'folder' },
-        { name: 'Downloads', path: app.getPath('downloads'), type: 'folder' },
-        { name: 'Documents', path: app.getPath('documents'), type: 'folder' },
-        { name: 'Movies', path: app.getPath('videos'), type: 'folder' },
-        { name: 'Pictures', path: app.getPath('pictures'), type: 'folder' },
-        { name: 'Music', path: app.getPath('music'), type: 'folder' }
-    ];
-    if (process.platform === 'darwin') {
-        try {
-            const external = fs.readdirSync('/Volumes');
-            external.forEach(v => {
-                if (v !== 'Macintosh HD' && !v.startsWith('.')) {
-                    volumes.push({ name: v, path: path.join('/Volumes', v), type: 'external' });
-                }
-            });
-        } catch (e) {}
-    }
-    return volumes;
-});
-
-ipcMain.handle('list-devices', async () => {
-    const devices = [];
-    try {
-        const { stdout } = await execPromise(`"${adbPath}" devices`);
-        const lines = stdout.split('\n');
-        for (let i = 1; i < lines.length; i++) {
-            const parts = lines[i].trim().split(/\s+/);
-            if (parts.length >= 2 && parts[1] === 'device') {
-                devices.push({ id: parts[0], name: `Android Phone (${parts[0]})`, type: 'android' });
-            }
-        }
-    } catch (e) {
-        console.error('list-devices error:', e);
-    }
-    return devices;
-});
-
-ipcMain.handle('list-files', async (event, targetPath, deviceId) => {
-    if (!deviceId) {
-        let absolutePath = targetPath || app.getPath('home');
-        if (!fs.existsSync(absolutePath)) absolutePath = app.getPath('home');
-        try {
-            const entries = fs.readdirSync(absolutePath, { withFileTypes: true });
-            return entries.filter(entry => !entry.name.startsWith('.')).map(entry => {
-                const fullPath = path.join(absolutePath, entry.name);
-                try {
-                    const stats = fs.statSync(fullPath);
-                    return { name: entry.name, path: fullPath, isDirectory: entry.isDirectory(), size: stats.size, dateModified: stats.mtime, type: entry.isDirectory() ? 'directory' : path.extname(entry.name).toLowerCase() };
-                } catch (e) { return null; }
-            }).filter(Boolean);
-        } catch (e) { return { error: e.message }; }
-    } else {
-        let remotePath = (targetPath || '/sdcard').replace(/\/+/g, '/');
-        if (!remotePath.endsWith('/')) remotePath += '/';
-        try {
-            const { stdout } = await execPromise(`"${adbPath}" -s "${deviceId}" shell ls -1F "${remotePath}"`);
-            return stdout.split(/\r?\n/).filter(Boolean).map(line => {
-                const isDirectory = line.endsWith('/');
-                const name = isDirectory ? line.slice(0, -1) : line.replace(/[*@]$/, '');
-                if (name === '.' || name === '..' || name.startsWith('.')) return null;
-                return { name, path: remotePath + name, isDirectory, size: 0, dateModified: 'Mobile File', type: isDirectory ? 'directory' : path.extname(name).toLowerCase() };
-            }).filter(Boolean);
-        } catch (e) { return { error: 'Could not access mobile storage.' }; }
-    }
-});
-
-ipcMain.handle('transfer-file', async (event, sourcePath, destPath, sourceDeviceId, destDeviceId) => {
-    try {
-        if (!sourceDeviceId && destDeviceId) await execPromise(`"${adbPath}" -s "${destDeviceId}" push "${sourcePath}" "${destPath}"`);
-        else if (sourceDeviceId && !destDeviceId) await execPromise(`"${adbPath}" -s "${sourceDeviceId}" pull "${sourcePath}" "${destPath}"`);
-        else if (!sourceDeviceId && !destDeviceId) fs.copyFileSync(sourcePath, destPath);
-        return { success: true };
-    } catch (e) { return { error: e.message }; }
-});
-
-ipcMain.handle('delete-file', async (event, targetPath, deviceId) => {
-    try {
-        if (!deviceId) {
-            if (fs.lstatSync(targetPath).isDirectory()) fs.rmSync(targetPath, { recursive: true, force: true });
-            else fs.unlinkSync(targetPath);
-        } else {
-            await execPromise(`"${adbPath}" -s "${deviceId}" shell rm -rf "${targetPath}"`);
-        }
-        return { success: true };
-    } catch (e) { return { error: e.message }; }
-});
-
-ipcMain.handle('rename-file', async (event, targetPath, newName, deviceId) => {
-    try {
-        const dir = path.dirname(targetPath);
-        const newPath = path.join(dir, newName).replace(/\\/g, '/');
-        if (!deviceId) fs.renameSync(targetPath, newPath);
-        else await execPromise(`"${adbPath}" -s "${deviceId}" shell mv "${targetPath}" "${newPath}"`);
-        return { success: true };
-    } catch (e) { return { error: e.message }; }
-});
-
-ipcMain.handle('get-mobile-preview', async (event, deviceId, remotePath) => {
-    const ext = path.extname(remotePath).toLowerCase();
-    const tempPath = path.join(tempDownloadsDir, `preview_${Date.now()}${ext}`);
-    try {
-        await execPromise(`"${adbPath}" -s "${deviceId}" pull "${remotePath}" "${tempPath}"`);
-        return tempPath;
-    } catch (e) { return null; }
-});
-
 ipcMain.handle('get-info', async (event, url) => {
     if (!ytDlpWrap) return { error: 'Engine not ready.' };
     try {
@@ -496,27 +320,25 @@ ipcMain.handle('get-info', async (event, url) => {
 ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
     if (!ytDlpWrap) return;
     try {
+        isStoppedByUser = false;
         const outputTemplate = path.join(tempDownloadsDir, `%(title)s.%(ext)s`);
-        let args = [url, '-o', outputTemplate, '--no-part', '--no-continue'];
+        let args = [url, '-o', outputTemplate, '--no-continue'];
         
         if (format === 'mp3-320') {
-                    args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
-                    args.push('--convert-thumbnails', 'jpg');
-                    args.push('--embed-thumbnail');
-                } else {
-                    // MERGE & RECODE WORKFLOW: Merge to MKV intermediate, then recode to MP4
-                    args.push('--merge-output-format', 'mkv');
-                    args.push('--recode-video', 'mp4');
-                    
-                    // DEFINITIVE FIX: Force VideoConvertor postprocessor to transcode the output to standard H.264 & AAC with 8-bit yuv420p format.
-                    // This guarantees 100% macOS Finder / Quick Look (spacebar preview) / QuickTime Player compatibility on Mac.
-                    args.push('--postprocessor-args', 'VideoConvertor:-c:v libx264 -c:a aac -pix_fmt yuv420p -b:a 192k -profile:v high -level 4.0');
-                    
-                    if (format === '4k') args.push('-f', 'bestvideo[height<=2160]+bestaudio/best');
-                    else if (format === '1080p') args.push('-f', 'bestvideo[height<=1080]+bestaudio/best');
-                    else if (format === '720p') args.push('-f', 'bestvideo[height<=720]+bestaudio/best');
+            args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
+            args.push('--convert-thumbnails', 'jpg');
+            args.push('--embed-thumbnail');
+        } else {
+            args.push('--merge-output-format', 'mkv');
+            args.push('--recode-video', 'mp4');
+            // DEFINITIVE FIX: Force VideoConvertor postprocessor to transcode the merged MKV to standard H.264 video and AAC audio with 8-bit yuv420p format
+            // This guarantees 100% macOS Finder / Quick Look / spacebar / QuickTime compatibility on macOS desktops
+            args.push('--postprocessor-args', 'VideoConvertor:-c:v libx264 -c:a aac -pix_fmt yuv420p -b:a 192k -profile:v high -level 4.0');
+            
+            if (format === '4k') args.push('-f', 'bestvideo[height<=2160]+bestaudio/best');
+            else if (format === '1080p') args.push('-f', 'bestvideo[height<=1080]+bestaudio/best');
+            else if (format === '720p') args.push('-f', 'bestvideo[height<=720]+bestaudio/best');
         }
-    
 
         if (startTime || endTime) {
             args.push('--download-sections', `*${startTime || 0}-${endTime || 'inf'}`);
@@ -531,7 +353,11 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
         currentDownloadProcess = downloader;
 
         downloader.on('progress', (progress) => { if (mainWindow) mainWindow.webContents.send('download-progress', progress); });
-        downloader.on('error', (error) => { if (mainWindow) mainWindow.webContents.send('download-error', { error: error.message }); });
+        downloader.on('error', (error) => {
+            if (!isStoppedByUser && mainWindow) {
+                mainWindow.webContents.send('download-error', { error: error.message });
+            }
+        });
 
         downloader.on('close', (code) => {
             try {
@@ -552,17 +378,47 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
                 if (code === 0 && moved) {
                     if (mainWindow) mainWindow.webContents.send('download-completed');
                     if (process.platform === 'darwin') app.setBadgeCount(app.getBadgeCount() + 1);
-                } else if (mainWindow) {
-                    mainWindow.webContents.send('download-error', {
-                        error: code !== 0 ? `Download failed (Code ${code}).` : 'No valid output file was found.'
-                    });
+                } else {
+                    // Clean up temp downloads directory on stop or fail
+                    try {
+                        const tempFiles = fs.readdirSync(tempDownloadsDir);
+                        tempFiles.forEach(f => {
+                            try { fs.unlinkSync(path.join(tempDownloadsDir, f)); } catch (err) {}
+                        });
+                    } catch (err) {}
+
+                    if (!isStoppedByUser && mainWindow) {
+                        mainWindow.webContents.send('download-error', {
+                            error: code !== 0 ? `Download failed (Code ${code}).` : 'No valid output file was found.'
+                        });
+                    } else if (isStoppedByUser && mainWindow) {
+                        mainWindow.webContents.send('download-stopped');
+                    }
                 }
-            } catch (e) { if (mainWindow) mainWindow.webContents.send('download-error', { error: 'Finalizing failed: ' + e.message }); }
+            } catch (e) {
+                if (!isStoppedByUser && mainWindow) {
+                    mainWindow.webContents.send('download-error', { error: 'Finalizing failed: ' + e.message });
+                }
+            }
         });
     } catch (e) { if (mainWindow) mainWindow.webContents.send('download-error', { error: e.message }); }
 });
 
-ipcMain.on('stop-download', () => { if (currentDownloadProcess) { currentDownloadProcess.kill(); currentDownloadProcess = null; } });
+ipcMain.on('stop-download', () => {
+    if (currentDownloadProcess) {
+        isStoppedByUser = true;
+        try {
+            if (typeof currentDownloadProcess.kill === 'function') {
+                currentDownloadProcess.kill();
+            } else if (currentDownloadProcess.ytDlpProcess && typeof currentDownloadProcess.ytDlpProcess.kill === 'function') {
+                currentDownloadProcess.ytDlpProcess.kill();
+            }
+        } catch (e) {
+            console.error('Error stopping download process:', e);
+        }
+        currentDownloadProcess = null;
+    }
+});
 
 ipcMain.handle('select-file', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openFile'] });
@@ -597,6 +453,23 @@ ipcMain.handle('trim-local-file', async (event, filePath, format, startTime, end
 
 app.whenReady().then(async () => {
     try {
+        // macOS Gatekeeper & Quarantine Self-Healing Bypasser
+        if (process.platform === 'darwin') {
+            try {
+                const appPath = path.resolve(app.getPath('exe'), '../../..');
+                if (appPath && appPath.endsWith('.app')) {
+                    console.log('macOS Self-Healer: Checking/clearing quarantine for:', appPath);
+                    const { exec } = require('child_process');
+                    exec(`xattr -cr "${appPath}" && chmod +x "${app.getPath('exe')}"`, (err) => {
+                        if (err) console.error('macOS Self-Healer error:', err);
+                        else console.log('macOS Self-Healer success: Fully cleared quarantine recursively!');
+                    });
+                }
+            } catch (bypassErr) {
+                console.error('macOS Self-Healer initialization failed:', bypassErr);
+            }
+        }
+
         userDataPath = app.getPath('userData');
         finalDownloadsDir = app.getPath('downloads');
         tempDownloadsDir = path.join(userDataPath, 'temp_downloads');
@@ -604,6 +477,14 @@ app.whenReady().then(async () => {
 
         if (!fs.existsSync(binDir)) fs.mkdirSync(binDir, { recursive: true });
         if (!fs.existsSync(tempDownloadsDir)) fs.mkdirSync(tempDownloadsDir, { recursive: true });
+
+        // Add internal bin_v1 directory to PATH so that yt-dlp and other tools can locate ffmpeg and ffprobe natively
+        const internalBinDir = path.join(userDataPath, 'bin_v1');
+        if (process.platform === 'win32') {
+            process.env.PATH = `${internalBinDir};${process.env.PATH}`;
+        } else {
+            process.env.PATH = `${internalBinDir}:${process.env.PATH}`;
+        }
 
         try { require('fix-path')(); } catch (e) {}
         setupAutoUpdater();
@@ -631,8 +512,17 @@ function createWindow() {
         backgroundColor: '#080b11',
         webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
     });
-    if (isDev) mainWindow.loadURL('http://localhost:5173').catch(() => mainWindow.loadFile(path.join(__dirname, '../frontend/dist/index.html')));
-    else mainWindow.loadFile(path.join(__dirname, '../frontend/dist/index.html'));
+    if (isDev) {
+        mainWindow.loadURL('http://localhost:5173').catch(() => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.loadFile(path.join(__dirname, '../frontend/dist/index.html')).catch(() => {});
+            }
+        });
+    } else {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.loadFile(path.join(__dirname, '../frontend/dist/index.html')).catch(() => {});
+        }
+    }
     mainWindow.on('closed', () => { mainWindow = null; });
 }
 
