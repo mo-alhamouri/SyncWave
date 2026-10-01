@@ -55,23 +55,27 @@
                         const isMac = userAgent.includes("mac");
                         const isWin = userAgent.includes("win");
 
-                        // 2. Apple Silicon (ARM64) vs Intel (x64) Detection
-                        let isAppleSilicon = false;
+                        // 2. Apple Silicon (arm64) vs Intel (x64) detection.
+                        //    true = Apple Silicon, false = Intel, null = can't tell (Safari
+                        //    reports "Apple GPU" on every Mac), in which case both are offered.
+                        let isAppleSilicon = null;
                         if (isMac) {
                           try {
-                            const canvas = document.createElement("canvas");
-                            const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
-                            if (gl) {
-                              const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
-                              if (debugInfo) {
-                                const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL).toLowerCase();
-                                if (renderer.includes("apple") && !renderer.includes("intel")) {
-                                  isAppleSilicon = true;
-                                }
-                              }
+                            if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+                              const v = await navigator.userAgentData.getHighEntropyValues(["architecture"]);
+                              if (v.architecture === "arm") isAppleSilicon = true;
+                              else if (v.architecture === "x86") isAppleSilicon = false;
                             }
-                          } catch (e) {
-                            isAppleSilicon = !userAgent.includes("intel");
+                          } catch (e) {}
+                          if (isAppleSilicon === null) {
+                            try {
+                              const canvas = document.createElement("canvas");
+                              const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+                              const dbg = gl && gl.getExtension("WEBGL_debug_renderer_info");
+                              const renderer = dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)).toLowerCase() : "";
+                              if (/intel|amd|radeon|nvidia/.test(renderer)) isAppleSilicon = false;
+                              else if (/apple m\d/.test(renderer)) isAppleSilicon = true;
+                            } catch (e) {}
                           }
                         }
 
@@ -94,7 +98,13 @@
                           let alternativeHTML = "";
 
                           // 5. Match Client Platform to Installer
-                          if (isMac) {
+                          if (isMac && isAppleSilicon === null) {
+                            selectedAsset = macArmAsset || macIntelAsset;
+                            btnLabel = "Download for Apple Silicon Mac (M1–M4)";
+                            if (macIntelAsset) {
+                              alternativeHTML = `<span class="sub-text">Older Mac with an Intel processor?</span> <a href="${macIntelAsset.browser_download_url}" class="sub-link"><strong>Download for Intel Mac</strong></a><br><span class="sub-text">Not sure? Apple menu &rsaquo; About This Mac: "Chip" = Apple Silicon, "Processor" = Intel.</span>`;
+                            }
+                          } else if (isMac) {
                             if (isAppleSilicon) {
                               selectedAsset = macArmAsset || macIntelAsset;
                               btnLabel = "Download for Apple Silicon (M1/M2/M3)";
@@ -304,6 +314,18 @@
     <section id="install" class="how-to">
         <div class="container">
             <h2 class="section-title">How to <span class="gradient-text">Install and Run</span></h2>
+
+            <div class="quick-install reveal">
+                <h3>Easiest: one-line install (recommended)</h3>
+                <p>Open <strong>Terminal</strong> (Applications &rsaquo; Utilities), paste this line and press Return. It picks the right version for your Mac (Intel or Apple Silicon), installs SyncWave into Applications and opens it &mdash; no security pop-ups, no System Settings.</p>
+                <div class="code-row">
+                    <code id="install-cmd">curl -fsSL https://mo-alhamouri.github.io/SyncWave/install.sh | bash</code>
+                    <button type="button" class="copy-btn" id="copy-install">Copy</button>
+                </div>
+                <p class="install-note">Already have SyncWave? Use the <strong>Update</strong> button inside the app (v1.2.8 and newer update themselves).</p>
+            </div>
+
+            <h3 class="install-subtitle">Or install from the downloaded .dmg</h3>
             <div class="steps-grid">
                 <div class="step-card reveal">
                     <div class="step-number">01</div>
@@ -350,6 +372,7 @@
                     <p>Authenticate using your Mac password or Touch ID to finalize the setup.</p>
                 </div>
             </div>
+            <p class="install-note">If macOS says SyncWave &ldquo;is damaged&rdquo; or there is no &ldquo;Open Anyway&rdquo; button, use the one-line installer above instead.</p>
         </div>
     </section>
 

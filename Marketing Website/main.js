@@ -16,51 +16,16 @@ document.addEventListener('DOMContentLoaded', () => {
         observer.observe(el);
     });
 
-    // Handle download button click
-    const downloadBtns = document.querySelectorAll('.download-btn');
-    const RELEASE_VERSION = '1.2.4';
-    const GITHUB_REPO = 'mo-alhamouri/SyncWave';
-    
-    const getDownloadUrl = async () => {
-        const platform = window.navigator.platform.toLowerCase();
-        const userAgent = window.navigator.userAgent.toLowerCase();
-        const baseUrl = `https://github.com/${GITHUB_REPO}/releases/download/v${RELEASE_VERSION}`;
-        
-        if (platform.includes('mac')) {
-            // Try to detect Apple Silicon
-            let isAppleSilicon = false;
-            if (window.navigator.userAgentData) {
-                try {
-                    const values = await window.navigator.userAgentData.getHighEntropyValues(['architecture']);
-                    isAppleSilicon = values.architecture === 'arm';
-                } catch (e) {}
-            }
-            
-            // Fallback detection
-            if (!isAppleSilicon && (userAgent.includes('arm64') || userAgent.includes('apple silicon'))) {
-                isAppleSilicon = true;
-            }
-
-            if (isAppleSilicon) {
-                return `${baseUrl}/SyncWave-${RELEASE_VERSION}-arm64.dmg`;
-            } else {
-                // Default to x64 for Intel Macs
-                return `${baseUrl}/SyncWave-${RELEASE_VERSION}-x64.dmg`;
-            }
-        } else if (platform.includes('win')) {
-            return `${baseUrl}/SyncWave-Setup-${RELEASE_VERSION}.exe`;
-        }
-        // Default to releases page if platform not detected
-        return `https://github.com/${GITHUB_REPO}/releases/tag/v${RELEASE_VERSION}`;
-    };
-
-    downloadBtns.forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            e.preventDefault();
-            const url = await getDownloadUrl();
-            window.location.href = url;
+    // Copy the one-line installer command
+    const copyBtn = document.getElementById('copy-install');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', async () => {
+            const cmd = document.getElementById('install-cmd').textContent.trim();
+            try { await navigator.clipboard.writeText(cmd); copyBtn.textContent = 'Copied!'; }
+            catch (e) { copyBtn.textContent = 'Select & copy'; }
+            setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
         });
-    });
+    }
 
     // Lightbox Logic
     const lightbox = document.getElementById('lightbox');

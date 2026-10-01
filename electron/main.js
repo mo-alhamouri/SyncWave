@@ -1,425 +1,219 @@
 const { app, BrowserWindow, ipcMain, shell, dialog, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn, exec } = require('child_process');
-const util = require('util');
-const https = require('https');
-const execPromise = util.promisify(exec);
+const { spawn } = require('child_process');
+const engine = require('./engine');
+const updater = require('./updater');
 
-// 1. ABSOLUTE TOP-LEVEL ERROR HANDLING
+// --- ERROR HANDLING ---
 function reportError(title, error) {
-    const message = error instanceof Error ?
-        `${error.message}\n\nStack:\n${error.stack}` :
-        `Non-Error thrown: ${JSON.stringify(error) || String(error)}`;
+    const message = error instanceof Error ? `${error.message}\n\nStack:\n${error.stack}` : String(error);
     console.error(title, error);
-    if (dialog && dialog.showErrorBox) {
-        dialog.showErrorBox(title, message);
-    }
+    if (dialog && dialog.showErrorBox) dialog.showErrorBox(title, message);
 }
+process.on('uncaughtException', (e) => reportError('SyncWave Uncaught Exception', e));
+process.on('unhandledRejection', (r) => console.error('SyncWave Unhandled Rejection', r));
 
-process.on('uncaughtException', (error) => reportError('SyncWave Uncaught Exception', error));
-process.on('unhandledRejection', (reason) => reportError('SyncWave Unhandled Rejection', reason));
+const isDev = !app.isPackaged;
 
-let isDev = false;
-try { isDev = !app.isPackaged; } catch (e) { isDev = false; }
-
-// --- GLOBAL STATE ---
-let autoUpdater = null;
-let ffmpegPath = '';
-let ffprobePath = '';
-let ytDlpPath = '';
-let binDir = '';
+// --- STATE ---
+let mainWindow = null;
 let userDataPath = '';
 let finalDownloadsDir = '';
 let tempDownloadsDir = '';
-let mainWindow = null;
+let ytDlpWrap = null;
+let engineReady = null;          // Promise resolved when the engine is initialised
 let currentDownloadProcess = null;
 let isStoppedByUser = false;
-let ytDlpWrap = null;
-let YTDlpWrap = null;
 
-// --- AUTO UPDATER LOGIC ---
-
-function getNextVersion(version) {
-    const parts = version.split('.');
-    if (parts.length === 3) {
-        parts[2] = parseInt(parts[2], 10) + 1;
-        return parts.join('.');
-    }
-    return version + '.1';
+function send(channel, payload) {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
 }
 
-function simulateStartupUpdate() {
-    setTimeout(() => {
-        const nextVer = getNextVersion(app.getVersion());
-        console.log('Simulating startup update available for version:', nextVer);
-        if (mainWindow) {
-            mainWindow.webContents.send('update-available', { version: nextVer });
-        }
-        
-        // Simulate download progress/completion after 5 seconds
-        setTimeout(() => {
-            console.log('Simulating update downloaded');
-            if (mainWindow) {
-                mainWindow.webContents.send('update-downloaded', { version: nextVer });
-            }
-        }, 5000);
-    }, 3000);
+function createWrap() {
+    const mod = require('yt-dlp-wrap');
+    const YTDlpWrap = mod.default || mod;
+    ytDlpWrap = new YTDlpWrap(engine.state.ytDlpPath);
 }
 
-function setupAutoUpdater() {
-    try {
-        const { autoUpdater: updater } = require('electron-updater');
-        autoUpdater = updater;
-        
-        autoUpdater.on('checking-for-update', () => console.log('Checking for update...'));
-        autoUpdater.on('update-available', (info) => {
-            console.log('Update available:', info);
-            if (mainWindow) mainWindow.webContents.send('update-available', info);
-        });
-        autoUpdater.on('update-not-available', (info) => console.log('Update not available:', info));
-        autoUpdater.on('error', (err) => console.error('Error in auto-updater:', err));
-        autoUpdater.on('download-progress', (progressObj) => console.log('Download progress:', progressObj));
-        autoUpdater.on('update-downloaded', (info) => {
-            console.log('Update downloaded:', info);
-            if (mainWindow) mainWindow.webContents.send('update-downloaded', info);
-        });
-
-        if (app.isPackaged) {
-            autoUpdater.checkForUpdatesAndNotify();
-        } else {
-            console.log('Running in development mode. Bypassing real autoUpdater.');
-            simulateStartupUpdate();
-        }
-    } catch (e) {
-        console.error('AutoUpdater setup failed:', e);
-        simulateStartupUpdate();
-    }
-}
-
-// --- BINARY MANAGEMENT (THE ENGINE) ---
-
-function downloadFile(url, dest) {
-    return new Promise((resolve, reject) => {
-        const file = fs.createWriteStream(dest);
-        const request = (targetUrl) => {
-            https.get(targetUrl, (response) => {
-                if (response.statusCode === 302 || response.statusCode === 301) {
-                    request(response.headers.location);
-                    return;
-                }
-                if (response.statusCode !== 200) {
-                    reject(new Error(`Server returned ${response.statusCode} for ${targetUrl}`));
-                    return;
-                }
-                response.pipe(file);
-                file.on('finish', () => {
-                    file.close(() => {
-                        try {
-                            // Ensure executable permissions
-                            fs.chmodSync(dest, '755');
-                            
-                            // macOS quarantine bypass for downloaded helper binaries
-                            if (process.platform === 'darwin') {
-                                try {
-                                    require('child_process').execSync(`xattr -d com.apple.quarantine "${dest}" 2>/dev/null || true`);
-                                } catch (err) {
-                                    console.log('Quarantine removal skipped or not needed for:', dest);
-                                }
-                            }
-                            
-                            resolve();
-                        } catch (e) { reject(e); }
-                    });
-                });
-            }).on('error', (err) => {
-                fs.unlink(dest, () => {});
-                reject(err);
-            });
-        };
-        request(url);
-    });
-}
-
-// Check if a binary actually runs on the current CPU
-function verifyBinary(p) {
-    if (!p || !fs.existsSync(p)) return Promise.resolve(false);
-    return new Promise(r => {
-        const proc = spawn(p, ['-version']);
-        proc.on('error', () => r(false));
-        proc.on('close', (code) => r(code === 0));
-    });
-}
-
-async function ensureBinaries() {
-    const platform = process.platform;
-    const arch = process.arch;
-    const isWin = platform === 'win32';
-    
-    // Internal bin location
-    const internalBinDir = path.join(userDataPath, 'bin_v1');
-    if (!fs.existsSync(internalBinDir)) fs.mkdirSync(internalBinDir, { recursive: true });
-
-    ffmpegPath = path.join(internalBinDir, isWin ? 'ffmpeg.exe' : 'ffmpeg');
-    ffprobePath = path.join(internalBinDir, isWin ? 'ffprobe.exe' : 'ffprobe');
-    ytDlpPath = path.join(internalBinDir, isWin ? 'yt-dlp.exe' : 'yt-dlp');
-
-    const status = (msg) => { if (mainWindow) mainWindow.webContents.send('init-status', msg); };
-
-    // 1. Ensure yt-dlp
-    if (!fs.existsSync(ytDlpPath)) {
-        status('Downloading Media Engine...');
-        let url = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
-        if (platform === 'darwin') url += '_macos';
-        else if (isWin) url += '.exe';
-        await downloadFile(url, ytDlpPath);
-    }
-
-    // 2. Resolve & Verify FFmpeg / FFprobe
-    let ready = await verifyBinary(ffmpegPath) && await verifyBinary(ffprobePath);
-    
-    if (!ready) {
-        status('Orchestrating Video Processors...');
-        
-        // Try bundled ones first (Search in app.asar.unpacked)
-        if (app.isPackaged) {
-            const unpackedPath = path.join(process.resourcesPath, 'app.asar.unpacked');
-            function deepSearch(base, target) {
-                if (!fs.existsSync(base)) return null;
-                const entries = fs.readdirSync(base);
-                for (const entry of entries) {
-                    const fullPath = path.join(base, entry);
-                    if (entry === target) return fullPath;
-                    if (fs.statSync(fullPath).isDirectory()) {
-                        const found = deepSearch(fullPath, target);
-                        if (found) return found;
-                    }
-                }
-                return null;
-            }
-
-            const bundledFfmpeg = deepSearch(unpackedPath, isWin ? 'ffmpeg.exe' : 'ffmpeg');
-            const bundledFfprobe = deepSearch(unpackedPath, isWin ? 'ffprobe.exe' : 'ffprobe');
-
-            if (await verifyBinary(bundledFfmpeg) && await verifyBinary(bundledFfprobe)) {
-                fs.copyFileSync(bundledFfmpeg, ffmpegPath);
-                fs.copyFileSync(bundledFfprobe, ffprobePath);
-                fs.chmodSync(ffmpegPath, '755');
-                fs.chmodSync(ffprobePath, '755');
-                
-            if (process.platform === 'darwin') {
-                exec(`xattr -d com.apple.quarantine "${ffmpegPath}" "${ffprobePath}" "${ytDlpPath}" 2>/dev/null || true`);
-                }
-                
-                // macOS quarantine bypass for copied helper binaries
-                if (platform === 'darwin') {
-                    try {
-                        require('child_process').execSync(`xattr -d com.apple.quarantine "${ffmpegPath}" "${ffprobePath}" 2>/dev/null || true`);
-                    } catch (err) {}
-                }
-                
-                ready = true;
-            }
-        } else {
-            // Dev environment
-            try {
-                const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
-                const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
-                if (await verifyBinary(ffmpegInstaller.path) && await verifyBinary(ffprobeInstaller.path)) {
-                    ffmpegPath = ffmpegInstaller.path;
-                    ffprobePath = ffprobeInstaller.path;
-                    ready = true;
-                }
-            } catch (e) {}
-        }
-    }
-
-    // 3. EMERGENCY DOWNLOAD (Definitive fix for architecture mismatches)
-    if (!ready) {
-        status('Downloading Native Processors (Architecture Recovery)...');
-        const base = 'https://github.com/mo-alhamouri/SyncWave/releases/download/v1.1.1/';
-        const archSuffix = platform === 'darwin' ? (arch === 'arm64' ? 'arm64' : 'x64') : 'win64';
-        
-        await downloadFile(`${base}ffmpeg-${archSuffix}${isWin ? '.exe' : ''}`, ffmpegPath);
-        await downloadFile(`${base}ffprobe-${archSuffix}${isWin ? '.exe' : ''}`, ffprobePath);
-        
-        ready = await verifyBinary(ffmpegPath) && await verifyBinary(ffprobePath);
-    }
-
-    if (!ready) throw new Error('Critical: Binary processors could not be initialized for this architecture.');
-
-    if (YTDlpWrap) {
-        ytDlpWrap = new YTDlpWrap(ytDlpPath);
-    }
-}
-
-// --- IPC HANDLERS ---
-
+// --- IPC: APP / UPDATES ---
 ipcMain.handle('get-version', () => app.getVersion());
-ipcMain.handle('check-for-updates', async () => {
-    const nextVer = getNextVersion(app.getVersion());
-    console.log('check-for-updates called. Returning next version:', nextVer);
-    // Simulate checking delay
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    // Trigger download simulation in the background
-    setTimeout(() => {
-        if (mainWindow) {
-            mainWindow.webContents.send('update-available', { version: nextVer });
-        }
-        setTimeout(() => {
-            if (mainWindow) {
-                mainWindow.webContents.send('update-downloaded', { version: nextVer });
-            }
-        }, 4000);
-    }, 1000);
-
-    return {
-        available: true,
-        version: nextVer,
-        url: 'https://github.com/mo-alhamouri/SyncWave/releases/latest'
-    };
-});
+ipcMain.handle('get-engine-info', () => ({ ytDlp: engine.state.ytDlpVersion, jsRuntime: engine.state.jsRuntime }));
+ipcMain.handle('check-for-updates', () => updater.check());
+ipcMain.handle('download-update', () => updater.download());
 ipcMain.on('quit-and-install', () => {
-    if (autoUpdater && app.isPackaged) {
-        try {
-            autoUpdater.quitAndInstall();
-            return;
-        } catch (e) {}
-    }
-    dialog.showMessageBoxSync({
-        type: 'info',
-        title: 'SyncWave Update',
-        message: `Successfully updated to version ${getNextVersion(app.getVersion())}! Reopening SyncWave...`,
-        buttons: ['OK']
-    });
-    app.relaunch();
-    app.exit(0);
+    const r = updater.install();
+    if (r && r.error) send('update-error', { error: r.error });
 });
+
+// --- IPC: WINDOW ---
 ipcMain.on('window-minimize', () => mainWindow && mainWindow.minimize());
 ipcMain.on('window-maximize', () => mainWindow && mainWindow.maximize());
 ipcMain.on('window-unmaximize', () => mainWindow && mainWindow.unmaximize());
-ipcMain.handle('window-is-maximized', () => mainWindow ? mainWindow.isMaximized() : false);
+ipcMain.handle('window-is-maximized', () => (mainWindow ? mainWindow.isMaximized() : false));
 ipcMain.on('open-downloads-folder', () => shell.openPath(finalDownloadsDir));
 ipcMain.on('clear-badge', () => { if (process.platform === 'darwin') app.setBadgeCount(0); });
 
+// --- IPC: MEDIA INFO ---
+async function waitForEngine() {
+    if (!engineReady) throw new Error('Engine not ready.');
+    await engineReady;
+    if (!ytDlpWrap) throw new Error('Engine not ready.');
+}
+
+async function fetchInfo(url) {
+    // -J returns one JSON document (a video, or a playlist with flat entries).
+    const out = await ytDlpWrap.execPromise([url, '-J', '--flat-playlist', '-f', 'bv*+ba/b', ...engine.baseArgs()]);
+    return JSON.parse(out);
+}
+
 ipcMain.handle('get-info', async (event, url) => {
-    if (!ytDlpWrap) return { error: 'Engine not ready.' };
     try {
-        const metadata = await ytDlpWrap.getVideoInfo(url);
+        await waitForEngine();
+        let metadata;
+        try {
+            metadata = await fetchInfo(url);
+        } catch (err) {
+            if (!engine.isRecoverable(err.message)) throw err;
+            // YouTube changed something: grab the newest yt-dlp and try again.
+            await engine.updateYtDlp('nightly').catch(() => {});
+            metadata = await fetchInfo(url);
+        }
         if (metadata._type === 'playlist') {
             return {
-                id: metadata.id, title: metadata.title, channel: metadata.uploader || 'Playlist',
-                isPlaylist: true, entries: metadata.entries.map(e => ({ id: e.id, title: e.title, duration: e.duration, url: e.webpage_url || e.url }))
+                id: metadata.id, title: metadata.title, channel: metadata.uploader || 'Playlist', isPlaylist: true,
+                entries: (metadata.entries || []).filter(Boolean).map((e) => ({ id: e.id, title: e.title, duration: e.duration, url: e.webpage_url || e.url })),
             };
         }
         return { id: metadata.id, title: metadata.title, thumbnail: metadata.thumbnail, duration: metadata.duration, channel: metadata.uploader, viewCount: metadata.view_count, isPlaylist: false };
-    } catch (error) { return { error: 'Info error: ' + error.message }; }
-});
-
-ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
-    if (!ytDlpWrap) return;
-    try {
-        isStoppedByUser = false;
-        const outputTemplate = path.join(tempDownloadsDir, `%(title)s.%(ext)s`);
-        let args = [url, '-o', outputTemplate, '--no-continue'];
-        
-        if (format === 'mp3-320') {
-            args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
-            args.push('--convert-thumbnails', 'jpg');
-            args.push('--embed-thumbnail');
-        } else {
-            args.push('--merge-output-format', 'mkv');
-            args.push('--recode-video', 'mp4');
-            // DEFINITIVE FIX: Force VideoConvertor postprocessor to transcode the merged MKV to standard H.264 video and AAC audio with 8-bit yuv420p format
-            // This guarantees 100% macOS Finder / Quick Look / spacebar / QuickTime compatibility on macOS desktops
-            args.push('--postprocessor-args', 'VideoConvertor:-c:v libx264 -c:a aac -pix_fmt yuv420p -b:a 192k -profile:v high -level 4.0');
-            
-            if (format === '4k') args.push('-f', 'bestvideo[height<=2160]+bestaudio/best');
-            else if (format === '1080p') args.push('-f', 'bestvideo[height<=1080]+bestaudio/best');
-            else if (format === '720p') args.push('-f', 'bestvideo[height<=720]+bestaudio/best');
-        }
-
-        if (startTime || endTime) {
-            args.push('--download-sections', `*${startTime || 0}-${endTime || 'inf'}`);
-            args.push('--force-keyframes-at-cuts');
-        }
-
-        // Use the absolute directory containing FFmpeg/FFprobe
-        if (ffmpegPath) args.push('--ffmpeg-location', path.dirname(ffmpegPath));
-        args.push('--js-runtimes', 'node');
-
-        const downloader = ytDlpWrap.exec(args);
-        currentDownloadProcess = downloader;
-
-        downloader.on('progress', (progress) => { if (mainWindow) mainWindow.webContents.send('download-progress', progress); });
-        downloader.on('error', (error) => {
-            if (!isStoppedByUser && mainWindow) {
-                mainWindow.webContents.send('download-error', { error: error.message });
-            }
-        });
-
-        downloader.on('close', (code) => {
-            try {
-                const files = fs.readdirSync(tempDownloadsDir);
-                let moved = false;
-                files.forEach(file => {
-                    const oldPath = path.join(tempDownloadsDir, file);
-                    const newPath = path.join(finalDownloadsDir, file);
-                    const isTarget = (format === 'mp3-320' && file.endsWith('.mp3')) || (format !== 'mp3-320' && file.endsWith('.mp4'));
-                    if (isTarget) {
-                        if (fs.existsSync(oldPath)) {
-                            fs.renameSync(oldPath, newPath);
-                            moved = true;
-                        }
-                    } else try { fs.unlinkSync(oldPath); } catch (e) {}
-                });
-                
-                if (code === 0 && moved) {
-                    if (mainWindow) mainWindow.webContents.send('download-completed');
-                    if (process.platform === 'darwin') app.setBadgeCount(app.getBadgeCount() + 1);
-                } else {
-                    // Clean up temp downloads directory on stop or fail
-                    try {
-                        const tempFiles = fs.readdirSync(tempDownloadsDir);
-                        tempFiles.forEach(f => {
-                            try { fs.unlinkSync(path.join(tempDownloadsDir, f)); } catch (err) {}
-                        });
-                    } catch (err) {}
-
-                    if (!isStoppedByUser && mainWindow) {
-                        mainWindow.webContents.send('download-error', {
-                            error: code !== 0 ? `Download failed (Code ${code}).` : 'No valid output file was found.'
-                        });
-                    } else if (isStoppedByUser && mainWindow) {
-                        mainWindow.webContents.send('download-stopped');
-                    }
-                }
-            } catch (e) {
-                if (!isStoppedByUser && mainWindow) {
-                    mainWindow.webContents.send('download-error', { error: 'Finalizing failed: ' + e.message });
-                }
-            }
-        });
-    } catch (e) { if (mainWindow) mainWindow.webContents.send('download-error', { error: e.message }); }
-});
-
-ipcMain.on('stop-download', () => {
-    if (currentDownloadProcess) {
-        isStoppedByUser = true;
-        try {
-            if (typeof currentDownloadProcess.kill === 'function') {
-                currentDownloadProcess.kill();
-            } else if (currentDownloadProcess.ytDlpProcess && typeof currentDownloadProcess.ytDlpProcess.kill === 'function') {
-                currentDownloadProcess.ytDlpProcess.kill();
-            }
-        } catch (e) {
-            console.error('Error stopping download process:', e);
-        }
-        currentDownloadProcess = null;
+    } catch (error) {
+        return { error: engine.cleanError(error.message) };
     }
 });
 
+// --- IPC: DOWNLOAD ---
+function buildDownloadArgs(url, format, startTime, endTime, extraArgs = []) {
+    const outputTemplate = path.join(tempDownloadsDir, '%(title)s.%(ext)s');
+    const args = [url, '-o', outputTemplate, '--no-continue', '--no-playlist', ...engine.baseArgs(), ...extraArgs];
+
+    if (format === 'mp3-320') {
+        args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0', '--convert-thumbnails', 'jpg', '--embed-thumbnail');
+    } else {
+        args.push('--merge-output-format', 'mkv', '--recode-video', 'mp4');
+        // Transcode to H.264/AAC yuv420p for Finder / Quick Look / QuickTime compatibility.
+        args.push('--postprocessor-args', 'VideoConvertor:-c:v libx264 -c:a aac -pix_fmt yuv420p -b:a 192k -profile:v high -level 4.0');
+        if (format === '4k') args.push('-f', 'bestvideo[height<=2160]+bestaudio/best');
+        else if (format === '1080p') args.push('-f', 'bestvideo[height<=1080]+bestaudio/best');
+        else if (format === '720p') args.push('-f', 'bestvideo[height<=720]+bestaudio/best');
+    }
+    if (startTime || endTime) {
+        args.push('--download-sections', `*${startTime || 0}-${endTime || 'inf'}`, '--force-keyframes-at-cuts');
+    }
+    return args;
+}
+
+function clearTemp() {
+    try { for (const f of fs.readdirSync(tempDownloadsDir)) { try { fs.rmSync(path.join(tempDownloadsDir, f), { recursive: true, force: true }); } catch (e) {} } } catch (e) {}
+}
+
+function finalize(format) {
+    let moved = false;
+    for (const file of fs.readdirSync(tempDownloadsDir)) {
+        const oldPath = path.join(tempDownloadsDir, file);
+        const isTarget = format === 'mp3-320' ? file.endsWith('.mp3') : file.endsWith('.mp4');
+        if (isTarget) {
+            let newPath = path.join(finalDownloadsDir, file);
+            if (fs.existsSync(newPath)) {
+                const ext = path.extname(file);
+                newPath = path.join(finalDownloadsDir, `${path.basename(file, ext)} (${Date.now()})${ext}`);
+            }
+            try { fs.renameSync(oldPath, newPath); } catch (e) { fs.copyFileSync(oldPath, newPath); fs.unlinkSync(oldPath); }
+            moved = true;
+        } else {
+            try { fs.rmSync(oldPath, { recursive: true, force: true }); } catch (e) {}
+        }
+    }
+    return moved;
+}
+
+// Retry ladder for downloads YouTube rejects (e.g. HTTP 403):
+//  1. normal attempt with the current engine
+//  2. update yt-dlp to the newest nightly build and retry
+//  3. retry with alternative YouTube player clients
+const RETRY_STEPS = [
+    { prepare: null, extra: [] },
+    { prepare: () => engine.updateYtDlp('nightly'), extra: [] },
+    { prepare: null, extra: ['--extractor-args', 'youtube:player_client=default,web_safari,web_embedded,tv'] },
+];
+
+function startAttempt(url, format, startTime, endTime, step) {
+    const args = buildDownloadArgs(url, format, startTime, endTime, RETRY_STEPS[step].extra);
+    console.log(`[download] attempt ${step + 1}: yt-dlp ${args.join(' ')}`);
+    const downloader = ytDlpWrap.exec(args);
+    currentDownloadProcess = downloader;
+
+    downloader.on('progress', (progress) => send('download-progress', progress));
+    downloader.on('ytDlpEvent', (type) => {
+        if (['ExtractAudio', 'Merger', 'VideoConvertor', 'EmbedThumbnail', 'ThumbnailsConvertor'].includes(type)) {
+            send('download-progress', { status: 'processing' });
+        }
+    });
+
+    downloader.on('close', () => {
+        try {
+            if (finalize(format)) {
+                send('download-completed');
+                if (process.platform === 'darwin') app.setBadgeCount(app.getBadgeCount() + 1);
+            } else {
+                clearTemp();
+                send('download-error', { error: 'No valid output file was found.' });
+            }
+        } catch (e) {
+            send('download-error', { error: 'Finalizing failed: ' + e.message });
+        }
+        currentDownloadProcess = null;
+    });
+
+    downloader.on('error', async (error) => {
+        currentDownloadProcess = null;
+        clearTemp();
+        if (isStoppedByUser) { send('download-stopped'); return; }
+        const next = step + 1;
+        if (engine.isRecoverable(error.message) && next < RETRY_STEPS.length) {
+            console.warn(`[download] attempt ${step + 1} failed (${engine.cleanError(error.message)}); retrying...`);
+            send('download-progress', { status: 'retrying', percent: 5 });
+            try { if (RETRY_STEPS[next].prepare) await RETRY_STEPS[next].prepare(); } catch (e) { console.error('[download] prepare failed:', e.message); }
+            if (isStoppedByUser) { send('download-stopped'); return; }
+            startAttempt(url, format, startTime, endTime, next);
+            return;
+        }
+        send('download-error', { error: engine.cleanError(error.message) });
+    });
+}
+
+ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
+    try {
+        await waitForEngine();
+        isStoppedByUser = false;
+        clearTemp();
+        startAttempt(url, format, startTime, endTime, 0);
+    } catch (e) {
+        send('download-error', { error: e.message });
+    }
+});
+
+ipcMain.on('stop-download', () => {
+    isStoppedByUser = true;
+    const p = currentDownloadProcess;
+    if (!p) return;
+    try {
+        if (p.ytDlpProcess && typeof p.ytDlpProcess.kill === 'function') p.ytDlpProcess.kill();
+        else if (typeof p.kill === 'function') p.kill();
+    } catch (e) { console.error('Error stopping download process:', e); }
+    currentDownloadProcess = null;
+});
+
+// --- IPC: TRIMMER ---
 ipcMain.handle('select-file', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openFile'] });
     if (!result.canceled && result.filePaths.length > 0) return { path: result.filePaths[0], name: path.basename(result.filePaths[0]) };
@@ -429,80 +223,55 @@ ipcMain.handle('select-file', async () => {
 ipcMain.handle('trim-local-file', async (event, filePath, format, startTime, endTime) => {
     const ext = format.toLowerCase().includes('mp3') ? 'mp3' : 'mp4';
     const originalName = path.basename(filePath, path.extname(filePath));
-    const outputName = `${originalName} Trimmed.${ext}`;
-    const outputPath = path.join(finalDownloadsDir, outputName);
-    
+    const outputPath = path.join(finalDownloadsDir, `${originalName} Trimmed.${ext}`);
+    const ffmpegPath = engine.state.ffmpegPath;
+
     return new Promise((resolve) => {
         if (!ffmpegPath || !fs.existsSync(ffmpegPath)) return resolve({ error: 'Video Processor not found. Please wait for initialization.' });
-        
-        let args = ['-ss', startTime.toString(), '-to', endTime.toString(), '-i', filePath];
-        if (ext === 'mp4') args.push('-c:v', 'copy', '-c:a', 'aac', '-strict', 'experimental');
+        const args = ['-y', '-ss', String(startTime), '-to', String(endTime), '-i', filePath];
+        if (ext === 'mp4') args.push('-c:v', 'copy', '-c:a', 'aac');
         else args.push('-c', 'copy');
         args.push(outputPath);
-        
         const proc = spawn(ffmpegPath, args);
-        proc.on('close', (code) => {
-            if (code === 0) resolve({ success: true, path: outputPath });
-            else resolve({ error: 'Trimming failed (Error ' + code + ')' });
-        });
+        proc.on('close', (code) => resolve(code === 0 ? { success: true, path: outputPath } : { error: `Trimming failed (Error ${code})` }));
         proc.on('error', (err) => resolve({ error: 'Trimmer start error: ' + err.message }));
     });
 });
 
 // --- APP READY ---
-
 app.whenReady().then(async () => {
     try {
-        // macOS Gatekeeper & Quarantine Self-Healing Bypasser
-        if (process.platform === 'darwin') {
-            try {
-                const appPath = path.resolve(app.getPath('exe'), '../../..');
-                if (appPath && appPath.endsWith('.app')) {
-                    console.log('macOS Self-Healer: Checking/clearing quarantine for:', appPath);
-                    const { exec } = require('child_process');
-                    exec(`xattr -cr "${appPath}" && chmod +x "${app.getPath('exe')}"`, (err) => {
-                        if (err) console.error('macOS Self-Healer error:', err);
-                        else console.log('macOS Self-Healer success: Fully cleared quarantine recursively!');
-                    });
-                }
-            } catch (bypassErr) {
-                console.error('macOS Self-Healer initialization failed:', bypassErr);
-            }
-        }
-
         userDataPath = app.getPath('userData');
         finalDownloadsDir = app.getPath('downloads');
         tempDownloadsDir = path.join(userDataPath, 'temp_downloads');
-        binDir = path.join(userDataPath, 'bin');
-
-        if (!fs.existsSync(binDir)) fs.mkdirSync(binDir, { recursive: true });
-        if (!fs.existsSync(tempDownloadsDir)) fs.mkdirSync(tempDownloadsDir, { recursive: true });
-
-        // Add internal bin_v1 directory to PATH so that yt-dlp and other tools can locate ffmpeg and ffprobe natively
-        const internalBinDir = path.join(userDataPath, 'bin_v1');
-        if (process.platform === 'win32') {
-            process.env.PATH = `${internalBinDir};${process.env.PATH}`;
-        } else {
-            process.env.PATH = `${internalBinDir}:${process.env.PATH}`;
-        }
+        fs.mkdirSync(tempDownloadsDir, { recursive: true });
 
         try { require('fix-path')(); } catch (e) {}
-        setupAutoUpdater();
-        try {
-            const wrapModule = require('yt-dlp-wrap');
-            YTDlpWrap = wrapModule.default || wrapModule;
-        } catch (e) {}
 
         protocol.registerFileProtocol('media', (request, callback) => {
             const url = request.url.replace('media://', '');
             try { return callback(decodeURIComponent(url)); } catch (error) {}
         });
 
-        // Initialize binaries BEFORE creating window
         createWindow();
-        await ensureBinaries();
+        updater.init(send);
 
-    } catch (err) { reportError('Critical Startup Error', err); }
+        engineReady = engine.init({
+            userDataPath,
+            isPackaged: app.isPackaged,
+            resourcesPath: process.resourcesPath,
+            status: (msg) => send('init-status', msg),
+        }).then(() => {
+            createWrap();
+            send('init-status', ''); // hide the "Initializing" overlay
+        });
+        engineReady.catch((err) => {
+            send('init-status', '');
+            reportError('SyncWave could not start its media engine', err);
+        });
+    } catch (err) {
+        reportError('Critical Startup Error', err);
+    }
 });
 
 function createWindow() {
@@ -510,20 +279,13 @@ function createWindow() {
         width: 1300, height: 850,
         titleBarStyle: 'hiddenInset',
         backgroundColor: '#080b11',
-        webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
+        webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
     });
-    if (isDev) {
-        mainWindow.loadURL('http://localhost:5173').catch(() => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.loadFile(path.join(__dirname, '../frontend/dist/index.html')).catch(() => {});
-            }
-        });
-    } else {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.loadFile(path.join(__dirname, '../frontend/dist/index.html')).catch(() => {});
-        }
-    }
+    const distIndex = path.join(__dirname, '../frontend/dist/index.html');
+    if (isDev) mainWindow.loadURL('http://localhost:5173').catch(() => mainWindow.loadFile(distIndex).catch(() => {}));
+    else mainWindow.loadFile(distIndex).catch(() => {});
     mainWindow.on('closed', () => { mainWindow = null; });
 }
 
+app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

@@ -35,6 +35,7 @@ function App() {
   const [isMaximized, setIsMaximized] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState(null);
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState(0);
   const [initStatus, setInitStatus] = useState('');
   
   // Trimmer Specific State
@@ -98,9 +99,20 @@ function App() {
       const removeAvailableListener = window.electron.onUpdateAvailable((info) => {
         setUpdateAvailable(info.version);
       });
-      const removeDownloadedListener = window.electron.onUpdateDownloaded(() => {
+      const removeDownloadedListener = window.electron.onUpdateDownloaded((info) => {
+        if (info && info.version) setUpdateAvailable(info.version);
         setUpdateDownloaded(true);
+        setUpdateProgress(100);
       });
+      const removeUpdateProgressListener = window.electron.onUpdateProgress
+        ? window.electron.onUpdateProgress((p) => setUpdateProgress(p.percent || 0))
+        : () => {};
+      const removeUpdateErrorListener = window.electron.onUpdateError
+        ? window.electron.onUpdateError((e) => {
+            setIsDownloadingUpdate(false);
+            showToast(`Update failed: ${e.error}`);
+          })
+        : () => {};
 
       const handleFocus = () => {
         if (window.electron && window.electron.clearBadge) {
@@ -114,6 +126,8 @@ function App() {
         removeInitListener();
         removeAvailableListener();
         removeDownloadedListener();
+        removeUpdateProgressListener();
+        removeUpdateErrorListener();
         window.removeEventListener('focus', handleFocus);
       };
     }
@@ -387,7 +401,11 @@ function App() {
       window.electron.download(url.trim(), format);
       
       const removeProgressListener = window.electron.onDownloadProgress((data) => {
-        if (data.status === 'processing') {
+        if (data.status === 'retrying') {
+          setDownloadState('downloading');
+          setDownloadPercent(5);
+          setDownloadMsg('YouTube blocked that attempt. Updating engine and retrying...');
+        } else if (data.status === 'processing') {
           setDownloadState('processing');
           setDownloadPercent(95);
           setDownloadMsg('Finalizing & Encoding High-Quality File...');
@@ -452,7 +470,7 @@ function App() {
           setUpdateInfo(update);
           setShowUpdateModal(true);
         } else {
-          alert('You have the latest version installed.');
+          showToast(`You're on the latest version (v${update.current || version}).`, 'success');
         }
       } catch (err) {
         showToast('Update check failed. Please try again later.');
@@ -460,9 +478,16 @@ function App() {
     }
   };
 
-  const handleDownloadUpdate = () => {
+  const handleDownloadUpdate = async () => {
+    if (!window.electron || !window.electron.downloadUpdate) return;
     setIsDownloadingUpdate(true);
-    showToast('Starting download...');
+    setUpdateAvailable(updateInfo.version);
+    setUpdateDownloaded(false);
+    setUpdateProgress(0);
+    setShowUpdateModal(false);
+    const result = await window.electron.downloadUpdate();
+    setIsDownloadingUpdate(false);
+    if (result && result.error) showToast(`Update failed: ${result.error}`);
   };
 
   const UpdateModal = ({ info, onClose }) => (
@@ -546,7 +571,7 @@ function App() {
             <div className="update-banner">
               <div className="update-info">
                 <span>Update v{updateAvailable}</span>
-                <p>{updateDownloaded ? 'Ready to install' : 'Downloading...'}</p>
+                <p>{updateDownloaded ? 'Ready to install' : `Downloading... ${updateProgress}%`}</p>
               </div>
               {updateDownloaded && (
                 <button onClick={handleInstallUpdate} className="install-update-btn">Restart & Update</button>

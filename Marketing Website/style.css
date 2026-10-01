@@ -484,3 +484,44 @@ nav a:hover {
     /* Hide specific nav items on mobile */
     .nav-link, .btn-nav { display: none; }
 }
+
+/* One-line installer */
+.quick-install {
+    max-width: 860px;
+    margin: 0 auto 48px;
+    padding: 28px;
+    border-radius: 18px;
+    background: rgba(99, 102, 241, 0.08);
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    text-align: left;
+}
+.quick-install h3 { margin: 0 0 10px; font-size: 1.3rem; }
+.quick-install p { color: #c7cbe0; line-height: 1.6; margin: 0 0 16px; }
+.code-row { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+.code-row code {
+    flex: 1 1 320px;
+    min-width: 0;
+    overflow-x: auto;
+    white-space: nowrap;
+    padding: 14px 16px;
+    border-radius: 10px;
+    background: #0b0f19;
+    border: 1px solid #262c3d;
+    color: #e5e7ff;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 14px;
+}
+.copy-btn {
+    padding: 0 22px;
+    min-height: 46px;
+    border-radius: 10px;
+    border: 0;
+    background: #4f46e5;
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+}
+.copy-btn:hover { background: #4338ca; }
+.install-subtitle { text-align: center; margin: 0 0 24px; font-size: 1.15rem; color: #c7cbe0; }
+.install-note { text-align: center; color: #9ca3af; font-size: 0.92rem; margin-top: 20px; }
+.quick-install .install-note { text-align: left; margin: 0; }

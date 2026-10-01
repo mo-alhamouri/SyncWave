@@ -1,63 +1,80 @@
-name: Build and Publish Release
+name: Release
 
+# Push a tag like v1.2.8 to build macOS (Intel + Apple Silicon) and Windows
+# installers and publish them as a GitHub Release. The in-app updater and the
+# website both read from the latest release.
 on:
   push:
     tags:
-      - 'v*' # Triggers whenever you push a tag starting with 'v' (e.g. v1.2.4)
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  release:
-    name: Build & Release SyncWave
+  build:
+    name: Build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
-
     strategy:
+      fail-fast: false
       matrix:
-        # Removed macos-latest to bypass the queue
-        os: [windows-latest, ubuntu-latest]
-
+        include:
+          - name: macOS
+            os: macos-latest
+          - name: Windows
+            os: windows-latest
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: npm
 
-      - name: Install Frontend Dependencies
-        run: |
-          if [ -f package.json ]; then
-            npm run setup
-          fi
-        shell: bash
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Build Frontend Assets
-        run: |
-          if npm run | grep -q "build"; then
-            npm run build
-          fi
-        shell: bash
+      - name: Build frontend
+        run: npm run build:frontend
 
-      # Install Electron app dependencies & compile native packages
-      - name: Install Electron dependencies
-        run: |
-          cd electron # Change this to the folder containing your Electron code if needed
-          npm install
-        shell: bash
-
-      # Compile and package the app for distribution using electron-builder
-      - name: Build & Publish Electron App
-        uses: samuelmeuli/action-electron-builder@v1
-        with:
-          # Your GitHub token is automatically supplied securely by GitHub
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          
-          # Changes directory to where your Electron codebase resides
-          package_root: 'electron' 
-          
-          # Instructs electron-builder to build for the active OS and publish
-          args: --publish always
+      - name: Package app (macOS, Intel + Apple Silicon)
+        if: runner.os == 'macOS'
+        run: bash scripts/ci-build-mac.sh
         env:
-          # Required for code signing or release management
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Package app (Windows)
+        if: runner.os == 'Windows'
+        run: npx electron-builder --win --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            dist_electron/*.dmg
+            dist_electron/*.zip
+            dist_electron/*.exe
+            dist_electron/*.blockmap
+            dist_electron/latest*.yml
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - run: ls -la dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          make_latest: 'true'
+          generate_release_notes: true
+          files: dist/*

@@ -1,19 +1,17 @@
 {
   "name": "syncwave-desktop",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "main": "electron/main.js",
   "scripts": {
-    "setup": "npm install && npm run setup:backend && npm run setup:frontend",
-    "setup:backend": "npm install --prefix backend",
+    "setup": "npm install && npm run setup:frontend",
     "setup:frontend": "npm install --prefix frontend",
     "dev:frontend": "npm run dev --prefix frontend",
     "dev": "concurrently --kill-others \"npm run dev:frontend\" \"wait-on http://localhost:5173 && electron .\"",
     "start": "electron .",
     "build": "npm run build:frontend",
     "build:frontend": "npm install --prefix frontend && npm run build --prefix frontend",
-    "dist": "npm run build:frontend && electron-builder",
-    "deploy": "gh-pages -d \"Marketing Website\"",
-    "check-token": "node -e \"console.log(process.env.GH_TOKEN || process.env.GITHUB_TOKEN || 'No Token')\""
+    "dist": "npm run build:frontend && electron-builder --publish never",
+    "deploy": "gh-pages -d \"Marketing Website\""
   },
   "build": {
     "appId": "com.syncwave.app",
@@ -22,7 +20,8 @@
       {
         "provider": "github",
         "owner": "mo-alhamouri",
-        "repo": "SyncWave"
+        "repo": "SyncWave",
+        "releaseType": "release"
       }
     ],
     "directories": {
@@ -30,10 +29,7 @@
     },
     "files": [
       "electron/**/*",
-      "frontend/dist/**/*",
-      "backend/**/*",
-      "!backend/node_modules/**/*",
-      "!backend/downloads/**/*"
+      "frontend/dist/**/*"
     ],
     "asarUnpack": [
       "**/node_modules/@ffmpeg-installer/**/*",
@@ -57,14 +53,18 @@
             "arm64"
           ]
         }
-      ]
+      ],
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
     },
     "win": {
       "artifactName": "${productName}-Setup-${version}.${ext}",
       "target": [
         "nsis"
       ]
-    }
+    },
+    "afterPack": "scripts/adhoc-sign.js"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
@@ -76,10 +76,10 @@
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@ffprobe-installer/ffprobe": "^2.1.2",
-    "electron-is-dev": "^2.0.0",
     "electron-updater": "^6.1.7",
     "fix-path": "^3.0.0",
-    "uuid": "^14.0.0",
     "yt-dlp-wrap": "^2.3.12"
-  }
+  },
+  "description": "SyncWave - download, trim and manage your media.",
+  "author": "Mo Alhamouri"
 }
