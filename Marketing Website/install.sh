@@ -30,9 +30,11 @@ else
 fi
 
 say "Looking up the latest SyncWave release..."
-TAG=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-  | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')
-[ -n "${TAG:-}" ] || fail "Could not find the latest release on GitHub."
+# Read the tag from GitHub's releases/latest redirect (no API rate limit).
+LATEST_URL=$(curl -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest") \
+  || fail "Could not reach GitHub. Check your internet connection and try again."
+TAG="${LATEST_URL##*/tag/}"
+case "$TAG" in v[0-9]*) ;; *) fail "Could not find the latest release on GitHub (got: $LATEST_URL)." ;; esac
 VERSION="${TAG#v}"
 URL="https://github.com/${REPO}/releases/download/${TAG}/SyncWave-${VERSION}-${ARCH}.zip"
 

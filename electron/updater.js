@@ -27,12 +27,12 @@ let winUpdater = null;
 function log(...a) { console.log('[updater]', ...a); }
 
 async function fetchLatest() {
-    const rel = await net.getJson(`https://api.github.com/repos/${REPO}/releases/latest`, { timeout: 15000 });
+    const tag = await net.latestTag(REPO);
     latest = {
-        version: String(rel.tag_name || '').replace(/^v/, ''),
-        notes: rel.body || '',
-        url: rel.html_url || `https://github.com/${REPO}/releases/latest`,
-        assets: rel.assets || [],
+        tag,
+        version: String(tag).replace(/^v/, ''),
+        notes: '',
+        url: `https://github.com/${REPO}/releases/tag/${tag}`,
     };
     return latest;
 }
@@ -61,20 +61,19 @@ async function check() {
     }
 }
 
-function macAssetFor(version) {
+function macAssetUrl() {
     const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
-    const name = `SyncWave-${version}-${arch}.zip`;
-    return latest.assets.find((a) => a.name === name);
+    const name = `SyncWave-${latest.version}-${arch}.zip`;
+    return { name, url: `https://github.com/${REPO}/releases/download/${latest.tag}/${name}` };
 }
 
 async function downloadMac() {
-    const asset = macAssetFor(latest.version);
-    if (!asset) throw new Error(`No macOS ${process.arch} build found in release v${latest.version}`);
+    const asset = macAssetUrl();
     const dir = path.join(app.getPath('userData'), 'updates');
     fs.rmSync(dir, { recursive: true, force: true });
     fs.mkdirSync(dir, { recursive: true });
     const zip = path.join(dir, asset.name);
-    await net.download(asset.browser_download_url, zip, (percent) => send('update-progress', { percent }));
+    await net.download(asset.url, zip, (percent) => send('update-progress', { percent }));
     const out = path.join(dir, 'unpacked');
     fs.mkdirSync(out, { recursive: true });
     await new Promise((resolve, reject) => execFile('ditto', ['-x', '-k', zip, out], (err) => err ? reject(err) : resolve()));

@@ -57,8 +57,7 @@ async function getYtDlpVersion() {
 // channel: 'stable' (yt-dlp/yt-dlp) or 'nightly' (yt-dlp/yt-dlp-nightly-builds)
 async function updateYtDlp(channel = 'stable', status = () => {}) {
     const repo = channel === 'nightly' ? 'yt-dlp/yt-dlp-nightly-builds' : 'yt-dlp/yt-dlp';
-    const release = await net.getJson(`https://api.github.com/repos/${repo}/releases/latest`, { timeout: 15000 });
-    const latest = String(release.tag_name || '').trim();
+    const latest = String(await net.latestTag(repo)).trim();
     if (!latest) throw new Error('Could not read latest yt-dlp version');
 
     const current = state.ytDlpVersion || await getYtDlpVersion();

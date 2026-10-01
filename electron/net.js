@@ -72,4 +72,23 @@ function compareVersions(a, b) {
     return 0;
 }
 
-module.exports = { get, getJson, download, compareVersions };
+// Latest release tag of a GitHub repo, read from the
+// https://github.com/<repo>/releases/latest redirect. Unlike api.github.com
+// this has no 60-requests-per-hour limit for anonymous users.
+function latestTag(repo, { timeout = 15000 } = {}) {
+    return new Promise((resolve, reject) => {
+        const req = https.request(`https://github.com/${repo}/releases/latest`,
+            { method: 'HEAD', headers: { 'User-Agent': USER_AGENT }, timeout }, (res) => {
+                res.resume();
+                const loc = res.headers.location || '';
+                const m = loc.match(/\/releases\/tag\/([^/?#]+)/);
+                if (m) resolve(decodeURIComponent(m[1]));
+                else reject(new Error(`Could not read latest release of ${repo} (HTTP ${res.statusCode})`));
+            });
+        req.on('timeout', () => req.destroy(new Error('Request timed out')));
+        req.on('error', reject);
+        req.end();
+    });
+}
+
+module.exports = { get, getJson, download, compareVersions, latestTag };
