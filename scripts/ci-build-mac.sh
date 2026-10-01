@@ -42,4 +42,18 @@ for ARCH in x64 arm64; do
   echo "$found" | grep -q "darwin-$OTHER" && { echo "Found $OTHER binaries in $ARCH build"; exit 1; }
   echo "$found" | grep -q "darwin-$ARCH/ffmpeg" || { echo "ffmpeg missing from $ARCH build"; exit 1; }
 done
+
+# Final check on what actually gets published: unpack each zip and make sure
+# the app and its FFmpeg/FFprobe match that zip's CPU.
+for ARCH in x64 arm64; do
+  MACHO=$([ "$ARCH" = x64 ] && echo x86_64 || echo arm64)
+  ZIP=$(ls dist_electron/SyncWave-*-"$ARCH".zip)
+  CHK="$WORK/check-$ARCH"; rm -rf "$CHK"; mkdir -p "$CHK"
+  ditto -x -k "$ZIP" "$CHK"
+  for b in "$CHK/SyncWave.app/Contents/MacOS/SyncWave" $(find "$CHK/SyncWave.app" -type f \( -name ffmpeg -o -name ffprobe \)); do
+    file "$b"
+    file "$b" | grep -q "$MACHO" || { echo "ERROR: $ZIP contains a non-$ARCH binary: $b"; exit 1; }
+  done
+  codesign --verify --deep --strict "$CHK/SyncWave.app" && echo "$ZIP signature OK"
+done
 ls -la dist_electron
