@@ -4,6 +4,7 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const engine = require('./engine');
 const updater = require('./updater');
+const convert = require('./convert');
 
 // --- ERROR HANDLING ---
 function reportError(title, error) {
@@ -94,17 +95,23 @@ ipcMain.handle('get-info', async (event, url) => {
 // --- IPC: DOWNLOAD ---
 function buildDownloadArgs(url, format, startTime, endTime, extraArgs = []) {
     const outputTemplate = path.join(tempDownloadsDir, '%(title)s.%(ext)s');
-    const args = [url, '-o', outputTemplate, '--no-continue', '--no-playlist', ...engine.baseArgs(), ...extraArgs];
+    // -N 4: download 4 fragments in parallel.
+    const args = [url, '-o', outputTemplate, '--no-continue', '--no-playlist', '-N', '4', ...engine.baseArgs(), ...extraArgs];
 
     if (format === 'mp3-320') {
         args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0', '--convert-thumbnails', 'jpg', '--embed-thumbnail');
     } else {
-        args.push('--merge-output-format', 'mkv', '--recode-video', 'mp4');
-        // Transcode to H.264/AAC yuv420p for Finder / Quick Look / QuickTime compatibility.
-        args.push('--postprocessor-args', 'VideoConvertor:-c:v libx264 -c:a aac -pix_fmt yuv420p -b:a 192k -profile:v high -level 4.0');
-        if (format === '4k') args.push('-f', 'bestvideo[height<=2160]+bestaudio/best');
-        else if (format === '1080p') args.push('-f', 'bestvideo[height<=1080]+bestaudio/best');
-        else if (format === '720p') args.push('-f', 'bestvideo[height<=720]+bestaudio/best');
+        // Highest resolution up to the chosen one, then prefer YouTube's
+        // H.264 + AAC streams: those are already Mac-compatible and only need
+        // packing into an MP4 (no re-encoding). If a video has no H.264 at that
+        // resolution, convert.ensureMacCompatible() converts it afterwards
+        // (hardware encoder when available).
+        const h = format === '720p' ? 720 : 1080;
+        args.push('-f', `bv*[height<=${h}]+ba/b[height<=${h}]/bv*+ba/b`);
+        args.push('-S', `res:${h},vcodec:h264,acodec:aac`);
+        // Merge into MKV (accepts any codec); convert.js then repacks it into
+        // an MP4, which for H.264 + AAC is a fast copy, not a re-encode.
+        args.push('--merge-output-format', 'mkv');
     }
     if (startTime || endTime) {
         args.push('--download-sections', `*${startTime || 0}-${endTime || 'inf'}`, '--force-keyframes-at-cuts');
@@ -154,13 +161,26 @@ function startAttempt(url, format, startTime, endTime, step) {
 
     downloader.on('progress', (progress) => send('download-progress', progress));
     downloader.on('ytDlpEvent', (type) => {
-        if (['ExtractAudio', 'Merger', 'VideoConvertor', 'EmbedThumbnail', 'ThumbnailsConvertor'].includes(type)) {
+        if (['ExtractAudio', 'Merger', 'EmbedThumbnail', 'ThumbnailsConvertor'].includes(type)) {
             send('download-progress', { status: 'processing' });
         }
     });
 
-    downloader.on('close', () => {
+    downloader.on('close', async () => {
+        currentDownloadProcess = null;
         try {
+            if (format !== 'mp3-320') {
+                const video = fs.readdirSync(tempDownloadsDir).find((f) => /\.(mkv|mp4|webm)$/i.test(f) && !f.includes('.converting.'));
+                if (video) {
+                    const r = await convert.ensureMacCompatible(path.join(tempDownloadsDir, video), {
+                        ffmpegPath: engine.state.ffmpegPath,
+                        ffprobePath: engine.state.ffprobePath,
+                        onProgress: (percent) => send('download-progress', { status: 'converting', percent }),
+                    });
+                    console.log(`[download] Mac compatibility: ${r.method}`);
+                }
+            }
+            if (isStoppedByUser) { clearTemp(); send('download-stopped'); return; }
             if (finalize(format)) {
                 send('download-completed');
                 if (process.platform === 'darwin') app.setBadgeCount(app.getBadgeCount() + 1);
@@ -169,9 +189,10 @@ function startAttempt(url, format, startTime, endTime, step) {
                 send('download-error', { error: 'No valid output file was found.' });
             }
         } catch (e) {
-            send('download-error', { error: 'Finalizing failed: ' + e.message });
+            clearTemp();
+            if (isStoppedByUser) send('download-stopped');
+            else send('download-error', { error: 'Finalizing failed: ' + e.message });
         }
-        currentDownloadProcess = null;
     });
 
     downloader.on('error', async (error) => {
@@ -204,6 +225,7 @@ ipcMain.on('start-download', async (event, url, format, startTime, endTime) => {
 
 ipcMain.on('stop-download', () => {
     isStoppedByUser = true;
+    convert.stop();
     const p = currentDownloadProcess;
     if (!p) return;
     try {

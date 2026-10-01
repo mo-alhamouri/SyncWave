@@ -354,7 +354,10 @@ function App() {
       window.electron.download(activeItem.url, format);
       
       const removeProgressListener = window.electron.onDownloadProgress((data) => {
-        if (data.status === 'processing') {
+        if (data.status === 'converting') {
+          setDownloadPercent(Math.max(90, Math.min(99, 90 + Math.floor((data.percent || 0) / 10))));
+          setDownloadMsg(`[${index + 1}/${updatedQueue.length}] Converting for Mac (${data.percent || 0}%): ${activeItem.title}`);
+        } else if (data.status === 'processing') {
           setDownloadPercent(95);
           setDownloadMsg(`[${index + 1}/${updatedQueue.length}] Finalizing: ${activeItem.title}`);
           updatedQueue[index].status = 'processing';
@@ -405,10 +408,14 @@ function App() {
           setDownloadState('downloading');
           setDownloadPercent(5);
           setDownloadMsg('YouTube blocked that attempt. Updating engine and retrying...');
+        } else if (data.status === 'converting') {
+          setDownloadState('processing');
+          setDownloadPercent(Math.max(90, Math.min(99, 90 + Math.floor((data.percent || 0) / 10))));
+          setDownloadMsg(`Converting for Mac compatibility... ${data.percent || 0}%`);
         } else if (data.status === 'processing') {
           setDownloadState('processing');
           setDownloadPercent(95);
-          setDownloadMsg('Finalizing & Encoding High-Quality File...');
+          setDownloadMsg('Finalizing your file...');
         } else {
           setDownloadState('downloading');
           const progress = Math.max(10, Math.floor(data.percent || 0));
@@ -667,7 +674,6 @@ function App() {
                       <span>Format:</span>
                       <select value={format} onChange={(e) => setFormat(e.target.value)} className="quality-select-inline" disabled={isDownloading}>
                         <option value="mp3-320">MP3 320kbps</option>
-                        <option value="4k">MP4 4K</option>
                         <option value="1080p">MP4 1080p</option>
                         <option value="720p">MP4 720p</option>
                       </select>

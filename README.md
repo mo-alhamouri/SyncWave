@@ -6,7 +6,7 @@ Website: https://mo-alhamouri.github.io/SyncWave/
 
 ## ✨ Features
 
-- **YouTube Engine**: 4K / 1080p / 720p MP4 and 320kbps MP3, including playlists.
+- **YouTube Engine**: 1080p / 720p MP4 and 320kbps MP3, including playlists. MP4s use YouTube's native H.264 streams (no re-encoding), with hardware-accelerated conversion as a fallback.
 - **Clip Trimmer**: precise trimming of local audio and video files.
 - **Self-maintaining engine**: yt-dlp updates itself on every launch and automatically retries with the newest build if YouTube blocks a download.
 - **In-app updates**: the *Update* button downloads and installs new SyncWave releases (v1.2.8+).
