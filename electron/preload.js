@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 const on = (channel) => (callback) => {
     const listener = (event, data) => callback(data);
@@ -30,6 +30,9 @@ contextBridge.exposeInMainWorld('electron', {
     // File operations
     openDownloads: () => ipcRenderer.send('open-downloads-folder'),
     selectFile: () => ipcRenderer.invoke('select-file'),
+    // Path of a file dropped onto the window (drag & drop).
+    getPathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch (e) { return file && file.path; } },
+    getWaveform: (path) => ipcRenderer.invoke('get-waveform', path),
     trimLocalFile: (path, format, start, end) => ipcRenderer.invoke('trim-local-file', path, format, start, end),
     clearBadge: () => ipcRenderer.send('clear-badge'),
 

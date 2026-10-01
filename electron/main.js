@@ -5,6 +5,7 @@ const { spawn } = require('child_process');
 const engine = require('./engine');
 const updater = require('./updater');
 const convert = require('./convert');
+const { getWaveform } = require('./waveform');
 
 // --- ERROR HANDLING ---
 function reportError(title, error) {
@@ -236,8 +237,18 @@ ipcMain.on('stop-download', () => {
 });
 
 // --- IPC: TRIMMER ---
+ipcMain.handle('get-waveform', async (event, filePath) => {
+    try {
+        await waitForEngine();
+        return await getWaveform(engine.state.ffmpegPath, filePath);
+    } catch (e) { return { error: e.message }; }
+});
+
 ipcMain.handle('select-file', async () => {
-    const result = await dialog.showOpenDialog({ properties: ['openFile'] });
+    const result = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [{ name: 'Audio & Video', extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'mp4', 'mov', 'm4v', 'mkv', 'webm', 'avi'] }, { name: 'All Files', extensions: ['*'] }],
+    });
     if (!result.canceled && result.filePaths.length > 0) return { path: result.filePaths[0], name: path.basename(result.filePaths[0]) };
     return null;
 });

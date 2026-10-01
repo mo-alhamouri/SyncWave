@@ -64,5 +64,8 @@ $SUDO ditto "$TMP/unpacked/$APP_NAME" "$DEST_DIR/$APP_NAME"
 # Remove the download flag from SyncWave only (in case it was set).
 $SUDO xattr -dr com.apple.quarantine "$DEST_DIR/$APP_NAME" 2>/dev/null || true
 
+# Clear leftovers from earlier in-app updates (older versions could not remove them).
+rm -rf "$HOME/Library/Application Support/syncwave-desktop/updates" 2>/dev/null || true
+
 say "SyncWave ${VERSION} installed. Opening it now..."
 open "$DEST_DIR/$APP_NAME"

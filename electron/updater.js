@@ -10,7 +10,10 @@
 //
 // Windows: electron-updater works with unsigned NSIS installers, so we use it.
 const { app, shell } = require('electron');
-const fs = require('fs');
+// Electron's normal "fs" treats .asar archives as folders, so deleting an
+// unpacked SyncWave.app with it fails (ENOTDIR ... app.asar). original-fs is
+// the plain Node fs without that behaviour.
+const fs = require('original-fs');
 const path = require('path');
 const { spawn, execFile } = require('child_process');
 const net = require('./net');
@@ -138,6 +141,7 @@ function install() {
         'if ditto "$NEW" "$TARGET"; then',
         '  xattr -cr "$TARGET" 2>/dev/null',
         '  rm -rf "$TARGET.old"',
+        `  rm -rf ${q(path.dirname(downloadedApp))}`,
         'else',
         '  [ -d "$TARGET.old" ] && mv "$TARGET.old" "$TARGET"',
         'fi',
@@ -159,8 +163,14 @@ function install() {
 
 // Called once at launch: quietly check, and if there is a newer version,
 // download it in the background and offer "Restart & Update".
+function cleanup() {
+    // Remove leftovers from earlier updates.
+    try { fs.rmSync(path.join(app.getPath('userData'), 'updates'), { recursive: true, force: true }); } catch (e) { console.error('[updater] cleanup failed:', e.message); }
+}
+
 function init(sender) {
     send = sender;
+    cleanup();
     if (!app.isPackaged) return;
     setTimeout(async () => {
         const r = await check();

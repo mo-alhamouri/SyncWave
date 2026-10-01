@@ -15,6 +15,103 @@ function formatDuration(seconds) {
   return `${m}:${sStr}`;
 }
 
+// Precise time for the playhead, e.g. 1:04.6
+function formatPrecise(seconds) {
+  const t = Math.max(0, seconds || 0);
+  const m = Math.floor(t / 60);
+  const s = t - m * 60;
+  return `${m}:${s < 10 ? '0' : ''}${s.toFixed(1)}`;
+}
+
+const MEDIA_EXT = /\.(mp3|wav|ogg|oga|opus|flac|m4a|aac|mp4|mov|m4v|mkv|webm|avi)$/i;
+const AUDIO_EXT = /\.(mp3|wav|ogg|oga|opus|flac|m4a|aac)$/i;
+// media:// URL for a local path (encodes spaces, #, ? etc.)
+const mediaUrl = (p) => `media://${p.split('/').map(encodeURIComponent).join('/')}`;
+
+// Real waveform: mirrored bars whose height follows the audio's loudness
+// (peak = outer bar, RMS = solid core), so loud, quiet and silent parts are
+// easy to see. Selected range is coloured, the played part is brighter.
+function TrimWaveform({ data, duration, startTime, endTime, playhead, onSeek }) {
+  const canvasRef = useRef(null);
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
+    ro.observe(el);
+    setWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !width) return;
+    const dpr = window.devicePixelRatio || 1;
+    const height = canvas.clientHeight;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    const mid = height / 2;
+    const maxH = mid - 6;
+    const barW = 2, gap = 1, step = barW + gap;
+    const bars = Math.max(1, Math.floor(width / step));
+    const dur = duration || 1;
+
+    const sel = ctx.createLinearGradient(0, 0, 0, height);
+    sel.addColorStop(0, '#8b5cf6'); sel.addColorStop(0.5, '#22d3ee'); sel.addColorStop(1, '#8b5cf6');
+    const played = ctx.createLinearGradient(0, 0, 0, height);
+    played.addColorStop(0, '#c4b5fd'); played.addColorStop(0.5, '#a5f3fc'); played.addColorStop(1, '#c4b5fd');
+
+    // Centre line so silence reads as "flat"
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillRect(0, mid - 0.5, width, 1);
+
+    const peaks = data && data.peaks;
+    const rms = data && data.rms;
+    for (let i = 0; i < bars; i++) {
+      const t = ((i + 0.5) / bars) * dur;
+      let pk = 0.04, rm = 0.02; // placeholder while loading
+      if (peaks && peaks.length) {
+        const a = Math.floor((i / bars) * peaks.length);
+        const b = Math.max(a + 1, Math.floor(((i + 1) / bars) * peaks.length));
+        pk = 0; rm = 0;
+        for (let k = a; k < b && k < peaks.length; k++) { if (peaks[k] > pk) pk = peaks[k]; if (rms[k] > rm) rm = rms[k]; }
+      }
+      const inSel = t >= startTime && t <= endTime;
+      const isPlayed = inSel && playhead != null && t <= playhead && playhead > startTime;
+      const x = i * step;
+      const hPeak = Math.max(1, pk * maxH);
+      const hRms = Math.max(1, Math.min(hPeak, rm * maxH * 1.4));
+      if (inSel) {
+        ctx.globalAlpha = 0.45;
+        ctx.fillStyle = isPlayed ? played : sel;
+        ctx.fillRect(x, mid - hPeak, barW, hPeak * 2);
+        ctx.globalAlpha = 1;
+        ctx.fillRect(x, mid - hRms, barW, hRms * 2);
+      } else {
+        ctx.fillStyle = 'rgba(255,255,255,0.13)';
+        ctx.fillRect(x, mid - hPeak, barW, hPeak * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.22)';
+        ctx.fillRect(x, mid - hRms, barW, hRms * 2);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }, [data, duration, startTime, endTime, playhead, width]);
+
+  const handleDown = (e) => {
+    if (!onSeek || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+    onSeek((x / rect.width) * duration);
+  };
+
+  return <canvas ref={canvasRef} className="waveform-canvas" onMouseDown={handleDown} title="Click to move the playhead" />;
+}
+
 // Helper to format view count (e.g. 1.2M, 450K)
 function formatViews(views) {
   if (!views) return '0';
@@ -43,6 +140,11 @@ function App() {
   const [localDuration, setLocalDuration] = useState(0);
   const [trimming, setTrimmerLoading] = useState(false);
   const [trimSuccess, setTrimSuccess] = useState(false);
+  const [waveData, setWaveData] = useState(null);
+  const [waveLoading, setWaveLoading] = useState(false);
+  const [playhead, setPlayhead] = useState(0);
+  const [dropActive, setDropActive] = useState(false);
+  const playRaf = useRef(null);
 
   // Refs
   const activeEventSource = useRef(null);
@@ -55,7 +157,6 @@ function App() {
   // Trimming State
   const [startTime, setStartTime] = useState(0);
   const [endTime, setEndTime] = useState(0);
-  const [waveform, setWaveform] = useState([]);
   
   const [downloadState, setDownloadState] = useState('idle');
   const [downloadPercent, setDownloadPercent] = useState(0);
@@ -181,19 +282,73 @@ function App() {
     };
   }, [dragging, startTime, endTime, metadata?.duration, localDuration, activeTab]);
 
+  const stopPlayback = () => {
+    if (playRaf.current) cancelAnimationFrame(playRaf.current);
+    playRaf.current = null;
+    [hiddenAudioRef.current, localPlayerRef.current].forEach((p) => { try { if (p) p.pause(); } catch (e) {} });
+    setIsPlaying(false);
+  };
+
+  const loadLocalFile = async (file) => {
+    if (!file || !file.path) return;
+    if (!MEDIA_EXT.test(file.name)) {
+      showToast('That file type is not supported. Use an audio or video file (MP3, WAV, M4A, MP4, MOV...).');
+      return;
+    }
+    stopPlayback();
+    setLocalFile(file);
+    setTrimSuccess(false);
+    setStartTime(0);
+    setEndTime(0);
+    setPlayhead(0);
+    setLocalDuration(0);
+    setWaveData(null);
+    if (window.electron && window.electron.getWaveform) {
+      setWaveLoading(true);
+      const data = await window.electron.getWaveform(file.path);
+      setWaveLoading(false);
+      if (data && !data.error) setWaveData(data);
+    }
+  };
+
   const handleSelectLocalFile = async () => {
     if (window.electron) {
       const file = await window.electron.selectFile();
-      if (file) {
-        setLocalFile(file);
-        setTrimSuccess(false);
-        setStartTime(0);
-        setEndTime(0);
-        setLocalDuration(0);
-        setWaveform([]);
-      }
+      if (file) loadLocalFile(file);
     }
   };
+
+  const fileFromDrop = (e) => {
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!f) return null;
+    const p = window.electron && window.electron.getPathForFile ? window.electron.getPathForFile(f) : f.path;
+    return p ? { path: p, name: f.name } : null;
+  };
+
+  // Drag & drop: stop Electron from opening dropped files as a page, and load
+  // a file dropped anywhere on the Clip Trimmer tab.
+  useEffect(() => {
+    const onOver = (e) => { e.preventDefault(); if (activeTab === 'trimmer') setDropActive(true); };
+    const onLeave = (e) => { if (!e.relatedTarget) setDropActive(false); };
+    const onDrop = (e) => {
+      e.preventDefault();
+      setDropActive(false);
+      if (activeTab !== 'trimmer') return;
+      const file = fileFromDrop(e);
+      if (file) loadLocalFile(file);
+    };
+    window.addEventListener('dragover', onOver);
+    window.addEventListener('dragleave', onLeave);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('dragover', onOver);
+      window.removeEventListener('dragleave', onLeave);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, [activeTab]);
+
+  // Stop playback when leaving the trimmer.
+  useEffect(() => { if (activeTab !== 'trimmer') stopPlayback(); }, [activeTab]);
 
   const handleLocalTrim = async () => {
     if (!localFile || trimming) return;
@@ -222,8 +377,9 @@ function App() {
         '*'
       );
     } else if (activeTab === 'trimmer') {
-       const player = localFile?.name.match(/\.(mp3|wav|ogg|flac|m4a)$/i) ? hiddenAudioRef.current : localPlayerRef.current;
+       const player = localFile && AUDIO_EXT.test(localFile.name) ? hiddenAudioRef.current : localPlayerRef.current;
        if (player) player.currentTime = time;
+       setPlayhead(time);
     }
   };
 
@@ -237,34 +393,41 @@ function App() {
       );
       setIsPlaying(!isPlaying);
     } else if (activeTab === 'trimmer') {
-      const currentPlayer = localFile?.name.match(/\.(mp3|wav|ogg|flac|m4a)$/i) ? hiddenAudioRef.current : localPlayerRef.current;
-      
-      if (!currentPlayer) return;
+      const player = localFile && AUDIO_EXT.test(localFile.name) ? hiddenAudioRef.current : localPlayerRef.current;
+      if (!player) return;
 
       if (isPlaying) {
-        currentPlayer.pause();
-        setIsPlaying(false);
-      } else {
-        currentPlayer.currentTime = startTime;
-        currentPlayer.play().catch(e => console.error('Play failed:', e));
-        setIsPlaying(true);
-        
-        const checkTime = () => {
-          if (currentPlayer && !currentPlayer.paused) {
-             if (currentPlayer.currentTime >= endTime) {
-                currentPlayer.pause();
-                currentPlayer.currentTime = startTime;
-                setIsPlaying(false);
-             } else {
-                requestAnimationFrame(checkTime);
-             }
-          } else {
-             setIsPlaying(false);
-          }
-        };
-        requestAnimationFrame(checkTime);
+        stopPlayback();
+        return;
       }
+      // Resume from the playhead if it's inside the selection, else from START.
+      const from = playhead > startTime && playhead < endTime - 0.05 ? playhead : startTime;
+      player.currentTime = from;
+      setPlayhead(from);
+      player.play().catch((e) => console.error('Play failed:', e));
+      setIsPlaying(true);
+
+      const tick = () => {
+        if (!player || player.paused) { setIsPlaying(false); playRaf.current = null; return; }
+        if (player.currentTime >= endTime) {
+          player.pause();
+          setPlayhead(startTime);
+          setIsPlaying(false);
+          playRaf.current = null;
+          return;
+        }
+        setPlayhead(player.currentTime);
+        playRaf.current = requestAnimationFrame(tick);
+      };
+      playRaf.current = requestAnimationFrame(tick);
     }
+  };
+
+  // Click on the waveform: move the playhead (keeps playing if playing).
+  const handleWaveSeek = (time) => {
+    const player = localFile && AUDIO_EXT.test(localFile.name) ? hiddenAudioRef.current : localPlayerRef.current;
+    if (player) player.currentTime = time;
+    setPlayhead(time);
   };
 
   const handleInstallUpdate = () => {
@@ -719,19 +882,19 @@ function App() {
 
             <div className="glass-panel main-panel">
               {!localFile ? (
-                <div className="upload-zone" onClick={handleSelectLocalFile}>
+                <div className={`upload-zone ${dropActive ? 'drop-active' : ''}`} onClick={handleSelectLocalFile}>
                   <div className="upload-icon">📁</div>
-                  <h3>Select a file to trim</h3>
-                  <p>Supports MP4, MP3, MOV, WAV and more</p>
+                  <h3>{dropActive ? 'Drop to open' : 'Drop a file here, or click to choose'}</h3>
+                  <p>Supports MP4, MP3, MOV, WAV, M4A and more</p>
                 </div>
               ) : (
                 <div className="trimmer-workspace">
                   <div className="trimmer-media-preview">
-                    {localFile.name.match(/\.(mp3|wav|ogg|flac|m4a)$/i) ? (
+                    {AUDIO_EXT.test(localFile.name) ? (
                       <div className="audio-placeholder-pro">
                         <audio 
                           ref={hiddenAudioRef}
-                          src={`media://${localFile.path}`}
+                          src={mediaUrl(localFile.path)}
                           onLoadedMetadata={(e) => {
                             const duration = e.target.duration;
                             setLocalDuration(duration);
@@ -746,7 +909,8 @@ function App() {
                     ) : (
                       <video 
                         ref={localPlayerRef}
-                        src={`media://${localFile.path}`}
+                        src={mediaUrl(localFile.path)}
+                        onTimeUpdate={(e) => { if (!isPlaying) setPlayhead(e.target.currentTime); }}
                         onLoadedMetadata={(e) => {
                           const duration = e.target.duration;
                           setLocalDuration(duration);
@@ -763,7 +927,7 @@ function App() {
                     <h3 className="video-title">{localFile.name}</h3>
                     <div className="trim-actions-row">
                       <div className="trim-primary-actions-full">
-                        <button onClick={() => { setLocalFile(null); setEndTime(0); setStartTime(0); }} className="btn-secondary-stylish">Change File</button>
+                        <button onClick={() => { stopPlayback(); setLocalFile(null); setWaveData(null); setEndTime(0); setStartTime(0); setPlayhead(0); }} className="btn-secondary-stylish">Change File</button>
                         <button 
                           onClick={handleLocalTrim} 
                           className="export-trigger-btn-stylish" 
@@ -778,9 +942,10 @@ function App() {
                   <div className="trim-section-pro-wide">
                     <div className="trim-header-studio">
                       <div className="trim-time-display">
-                        <span>{formatDuration(startTime)}</span>
-                        <span className="time-divider">/</span>
-                        <span>{formatDuration(endTime)}</span>
+                        <span className={`playhead-time ${isPlaying ? 'live' : ''}`}>{formatPrecise(playhead)}</span>
+                        <span className="time-divider">|</span>
+                        <span className="selection-time">{formatDuration(startTime)} – {formatDuration(endTime)}</span>
+                        <span className="selection-length">{formatPrecise(Math.max(0, endTime - startTime))} selected</span>
                       </div>
                       <button onClick={togglePlay} className="studio-play-btn">
                         {isPlaying ? (
@@ -794,14 +959,23 @@ function App() {
 
                     <div className="spectrum-container-wide" ref={spectrumRef}>
                       <div className="waveform-bg">
-                        {[...Array(100)].map((_, i) => {
-                          const duration = localDuration || 1;
-                          const isSelected = (i / 100) * duration >= startTime && (i / 100) * duration <= endTime;
-                          return <div key={i} className={`wave-bar ${isSelected ? 'active' : ''}`} style={{ height: `${20 + Math.random() * 60}%` }}></div>
-                        })}
+                        <TrimWaveform
+                          data={waveData}
+                          duration={localDuration || (waveData && waveData.duration) || 0}
+                          startTime={startTime}
+                          endTime={endTime}
+                          playhead={playhead}
+                          onSeek={handleWaveSeek}
+                        />
+                        {waveLoading && <div className="waveform-loading">Analyzing audio…</div>}
                       </div>
                       <div className="range-container-studio">
                         <div className="selection-overlay" style={{ left: `${(startTime / (localDuration || 1)) * 100}%`, width: `${((endTime - startTime) / (localDuration || 1)) * 100}%` }}></div>
+                        {localDuration > 0 && (
+                          <div className={`playhead-marker ${isPlaying ? 'live' : ''}`} style={{ left: `${(playhead / localDuration) * 100}%` }}>
+                            <div className="playhead-bubble">{formatPrecise(playhead)}</div>
+                          </div>
+                        )}
                         <div className="handle-container" style={{ left: `${(startTime / (localDuration || 1)) * 100}%` }} onMouseDown={() => setDragging('start')}>
                           <div className="handle-label top">START</div>
                           <div className="handle-bar"></div>
