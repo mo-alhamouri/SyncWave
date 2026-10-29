@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SyncWave | Pro-Grade Media Management</title>
+    <title>SyncWave | YouTube Downloader &amp; Clip Trimmer for Mac and Windows</title>
+    <meta name="description" content="SyncWave is a free desktop app for Mac and Windows. Download YouTube videos as MP4 (1080p or 720p) or audio as MP3 (320 kbps), then trim any audio or video file on a visual waveform.">
     <link rel="stylesheet" href="style.css">
     <link class="favicon" rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -18,8 +19,8 @@
             </div>
             <nav id="navbar-nav">
                 <a href="#features" class="nav-link">Features</a>
-                <a href="#technical" class="nav-link">Specs</a>
-                <a href="#install" class="nav-link">How to Install on MacOS</a>
+                <a href="#technical" class="nav-link">Why SyncWave</a>
+                <a href="#install" class="nav-link">Install on Mac</a>
             </nav>
         </div>
     </header>
@@ -27,8 +28,8 @@
     <section class="hero">
         <div class="container">
             <div class="hero-content">
-                <h1 class="gradient-text">Professional Studio-Grade Media Management</h1>
-                <p>The all-in-one desktop bridge for your media. Download, trim, & more with absolute precision.</p>
+                <h1 class="gradient-text">Download from YouTube. Trim anything.</h1>
+                <p>SyncWave is a free desktop app for Mac and Windows. Save YouTube videos as MP4 or audio as MP3, then cut exactly the clip you need on a visual waveform.</p>
                 <div class="hero-actions">
                     
                     <!-- Dynamic Zero-Maintenance Download Component -->
@@ -43,7 +44,7 @@
                     <script>
                       const GITHUB_USER = "mo-alhamouri";
                       const GITHUB_REPO = "SyncWave";
-                      const FALLBACK_VERSION = "v1.2.4"; // Baseline fallback version
+                      const FALLBACK_VERSION = "v1.2.10"; // Shown only if GitHub can't be reached
 
                       async function initLatestDownload() {
                         const downloadBtn = document.getElementById("download-btn");
@@ -107,7 +108,7 @@
                           } else if (isMac) {
                             if (isAppleSilicon) {
                               selectedAsset = macArmAsset || macIntelAsset;
-                              btnLabel = "Download for Apple Silicon (M1/M2/M3)";
+                              btnLabel = "Download for Apple Silicon Mac (M1–M4)";
                               if (macIntelAsset) {
                                 alternativeHTML = `<a href="${macIntelAsset.browser_download_url}" class="sub-link">Intel Mac version (x64)</a>`;
                               }
@@ -115,7 +116,7 @@
                               selectedAsset = macIntelAsset || macArmAsset;
                               btnLabel = "Download for Intel Mac (x64)";
                               if (macArmAsset) {
-                                alternativeHTML = `<a href="${macArmAsset.browser_download_url}" class="sub-link">Apple Silicon version (M1/M2/M3)</a>`;
+                                alternativeHTML = `<a href="${macArmAsset.browser_download_url}" class="sub-link">Apple Silicon version (M1–M4)</a>`;
                               }
                             }
                           } else if (isWin) {
@@ -242,7 +243,7 @@
             </div>
             <div class="hero-image">
                 <div class="glass-mockup">
-                    <img src="App Screenshots/Hero.png" alt="SyncWave App Mockup">
+                    <img src="App Screenshots/Hero.png" alt="SyncWave YouTube Downloader with a finished MP3 download">
                 </div>
             </div>
         </div>
@@ -250,21 +251,22 @@
 
     <section id="features" class="features">
         <div class="container">
-            <h2 class="section-title">One App. <span class="gradient-text">Infinite Power.</span></h2>
+            <h2 class="section-title">One App. <span class="gradient-text">Two Tools.</span></h2>
             
             <div class="feature-item">
                 <div class="feature-text">
                     <div class="feature-icon">🚀</div>
-                    <h3>High-Performance Engine</h3>
-                    <p>Download your favorite content in studio quality. Full HD 1080p MP4 video and 320kbps MP3 audio, with fast parallel downloads.</p>
+                    <h3>YouTube Downloader</h3>
+                    <p>Paste a link, check the preview, pick a format and download. Videos are saved as MP4 files that play right away in QuickTime, Photos and iMovie.</p>
                     <ul class="feature-list">
-                        <li>1080p &amp; 720p MP4 Video</li>
-                        <li>High-Fidelity Audio Extraction</li>
-                        <li>Playlist Batch Processing</li>
+                        <li>MP4 video in 1080p or 720p</li>
+                        <li>MP3 audio at 320 kbps</li>
+                        <li>Preview the title, channel and thumbnail first</li>
+                        <li>Retries automatically if YouTube blocks a download</li>
                     </ul>
                 </div>
                 <div class="feature-preview clickable-image">
-                    <img src="App Screenshots/Feature1_YouTube_Downloader.png" alt="YouTube Downloader Feature">
+                    <img src="App Screenshots/Feature1_YouTube_Downloader.png" alt="SyncWave YouTube Downloader with MP4 1080p selected">
                     <div class="expand-hint">Click to expand</div>
                 </div>
             </div>
@@ -272,16 +274,17 @@
             <div class="feature-item reverse">
                 <div class="feature-text">
                     <div class="feature-icon">✂️</div>
-                    <h3>Precision Clip Workspace</h3>
-                    <p>Cut and trim any local media file with frame-accurate precision. Perfect for social media, presentations, or archiving.</p>
+                    <h3>Clip Trimmer</h3>
+                    <p>Drop in any audio or video file and cut exactly the part you want. The waveform shows the loud and quiet parts, so finding the right moment is quick. Clips are saved to your Downloads folder.</p>
                     <ul class="feature-list">
-                        <li>Visual Waveform Analysis</li>
-                        <li>Lossless Trimming Engine</li>
-                        <li>Multi-Format Export</li>
+                        <li>Real waveform with Start and End handles</li>
+                        <li>Live playhead and Play Selection preview</li>
+                        <li>Drag &amp; drop MP3, WAV, M4A, FLAC, MP4, MOV, MKV and more</li>
+                        <li>Fast export with no video re-encoding</li>
                     </ul>
                 </div>
                 <div class="feature-preview clickable-image">
-                    <img src="App Screenshots/Feature2_Clip_Trimmer.png" alt="Clip Trimmer Feature">
+                    <img src="App Screenshots/Feature2_Clip_Trimmer.png" alt="SyncWave Clip Trimmer with a selection on the waveform">
                     <div class="expand-hint">Click to expand</div>
                 </div>
             </div>
@@ -292,19 +295,19 @@
     <section id="technical" class="tech-specs">
         <div class="container">
             <div class="glass-panel">
-                <h2 class="section-title">Built for <span class="gradient-text">Performance</span></h2>
+                <h2 class="section-title">Built to <span class="gradient-text">Just Work</span></h2>
                 <div class="specs-grid">
                     <div class="spec-card">
-                        <h4>Local-First</h4>
-                        <p>Your data stays on your machine. No cloud, no tracking, complete privacy.</p>
+                        <h4>Private by Design</h4>
+                        <p>Downloads and clips never leave your computer. The app has no accounts and no tracking.</p>
                     </div>
                     <div class="spec-card">
-                        <h4>Multi-Platform</h4>
-                        <p>Fully optimized for Apple Silicon (M1/M2/M3/M4) and modern Windows builds.</p>
+                        <h4>Mac and Windows</h4>
+                        <p>Native builds for both Intel and Apple Silicon (M1–M4) Macs, plus Windows.</p>
                     </div>
                     <div class="spec-card">
-                        <h4>Zero bloat</h4>
-                        <p>Lightweight core built with high-performance native modules.</p>
+                        <h4>Always Up to Date</h4>
+                        <p>SyncWave keeps its download engine and FFmpeg current on every launch, and updates itself with one click.</p>
                     </div>
                 </div>
             </div>
@@ -322,7 +325,7 @@
                     <code id="install-cmd">curl -fsSL https://mo-alhamouri.github.io/SyncWave/install.sh | bash</code>
                     <button type="button" class="copy-btn" id="copy-install">Copy</button>
                 </div>
-                <p class="install-note">Already have SyncWave? Use the <strong>Update</strong> button inside the app (v1.2.8 and newer update themselves).</p>
+                <p class="install-note">Already have SyncWave? Click <strong>Update</strong> in the app&rsquo;s sidebar (v1.2.10 and newer). On an older version, run the line above once to upgrade.</p>
             </div>
 
             <h3 class="install-subtitle">Or install from the downloaded .dmg</h3>
@@ -382,7 +385,7 @@
                 <div class="logo">
                     <span class="logo-text">SyncWave</span>
                 </div>
-                <p>&copy; 2026 SyncWave. Professional-grade media tools.</p>
+                <p>&copy; 2026 SyncWave. Free YouTube downloader and clip trimmer. Only download content you have the right to use.</p>
                 <div class="footer-links">
                     <a href="mailto:mo_designs_codes_tech@yahoo.com">Support</a>
                 </div>
@@ -397,5 +400,6 @@
     </div>
 
     <script src="main.js"></script>
+    <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "efa0bfcead8c402388413eae19f8ebcb"}'></script><!-- End Cloudflare Web Analytics -->
 </body>
 </html>
