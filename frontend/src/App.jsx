@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useEffectEvent, useRef } from 'react';
 
 // Helper to format duration in seconds to MM:SS or HH:MM:SS
 function formatDuration(seconds) {
@@ -121,6 +121,32 @@ function formatViews(views) {
   return views.toLocaleString();
 }
 
+function UpdateModal({ info, onClose, onDownload, downloading }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="update-modal" onClick={e => e.stopPropagation()}>
+        <button className="modal-close" onClick={onClose}>&times;</button>
+        <div className="modal-content">
+          <div className="update-icon">🚀</div>
+          <h2>Update Available</h2>
+          <p>A new version <strong>{info.version}</strong> is available.</p>
+          <p className="update-details">Would you like to download and install the update now?</p>
+          <div className="modal-actions">
+            <button 
+              className="btn-primary-stylish" 
+              onClick={onDownload}
+              disabled={downloading}
+            >
+              {downloading ? 'Downloading...' : 'Download Now'}
+            </button>
+            <button className="btn-secondary-stylish" onClick={onClose}>Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState('downloader');
   const [url, setUrl] = useState('');
@@ -165,12 +191,10 @@ function App() {
   const [dragging, setDragging] = useState(null);
   const [toast, setToast] = useState(null);
 
-  // Playlist states
-  const [selectedItemIds, setSelectedItemIds] = useState({});
-  const [playlistSearch, setPlaylistSearch] = useState('');
-  const [queue, setQueue] = useState([]);
-  const [queueIndex, setQueueIndex] = useState(0);
-  const [queueActive, setQueueActive] = useState(false);
+  // Update modal state (declared early: the update listeners below use it)
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [isDownloadingUpdate, setIsDownloadingUpdate] = useState(false);
 
   // Toast Helper
   const showToast = (message, type = 'error') => {
@@ -180,9 +204,7 @@ function App() {
     }
   };
 
-  const filteredPlaylistEntries = metadata?.isPlaylist 
-    ? metadata.entries.filter(item => item.title.toLowerCase().includes(playlistSearch.toLowerCase()))
-    : [];
+  const playlistEntries = metadata?.isPlaylist ? metadata.entries : [];
 
   // Auto-focus, Badge Clearing, and Version Check
   useEffect(() => {
@@ -234,58 +256,10 @@ function App() {
     }
   }, []);
 
-  // RESET UI IF FORMAT CHANGES
-  useEffect(() => {
-    if (downloadState === 'completed' || downloadState === 'error') {
-      setDownloadState('idle');
-      setDownloadMsg('');
-      setDownloadPercent(0);
-    }
-  }, [format]);
-
-  // Handle Dragging Logic
-  useEffect(() => {
-    if (!dragging) return;
-
-    const originalUserSelect = document.body.style.userSelect;
-    document.body.style.userSelect = 'none';
-
-    const onMouseMove = (e) => {
-      if (!spectrumRef.current) return;
-      const rect = spectrumRef.current.getBoundingClientRect();
-      const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-      const duration = activeTab === 'downloader' ? metadata?.duration : localDuration;
-      const time = (x / rect.width) * (duration || 1);
-
-      if (dragging === 'start') {
-        const nextStart = Math.min(time, endTime - 0.1);
-        setStartTime(nextStart);
-        handleSeek(nextStart);
-      } else {
-        const nextEnd = Math.max(time, startTime + 0.1);
-        setEndTime(nextEnd);
-        handleSeek(nextEnd);
-      }
-    };
-
-    const onMouseUp = () => {
-      setDragging(null);
-      document.body.style.userSelect = originalUserSelect;
-    };
-
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-      document.body.style.userSelect = originalUserSelect;
-    };
-  }, [dragging, startTime, endTime, metadata?.duration, localDuration, activeTab]);
-
   const stopPlayback = () => {
     if (playRaf.current) cancelAnimationFrame(playRaf.current);
     playRaf.current = null;
-    [hiddenAudioRef.current, localPlayerRef.current].forEach((p) => { try { if (p) p.pause(); } catch (e) {} });
+    [hiddenAudioRef.current, localPlayerRef.current].forEach((p) => { try { if (p) p.pause(); } catch { /* player already gone */ } });
     setIsPlaying(false);
   };
 
@@ -325,6 +299,8 @@ function App() {
     return p ? { path: p, name: f.name } : null;
   };
 
+  const onFileDropped = useEffectEvent((file) => loadLocalFile(file));
+
   // Drag & drop: stop Electron from opening dropped files as a page, and load
   // a file dropped anywhere on the Clip Trimmer tab.
   useEffect(() => {
@@ -335,7 +311,7 @@ function App() {
       setDropActive(false);
       if (activeTab !== 'trimmer') return;
       const file = fileFromDrop(e);
-      if (file) loadLocalFile(file);
+      if (file) onFileDropped(file);
     };
     window.addEventListener('dragover', onOver);
     window.addEventListener('dragleave', onLeave);
@@ -347,8 +323,20 @@ function App() {
     };
   }, [activeTab]);
 
-  // Stop playback when leaving the trimmer.
-  useEffect(() => { if (activeTab !== 'trimmer') stopPlayback(); }, [activeTab]);
+  const switchTab = (tab) => {
+    if (tab !== 'trimmer') stopPlayback(); // stop playback when leaving the trimmer
+    setActiveTab(tab);
+  };
+
+  const handleFormatChange = (next) => {
+    setFormat(next);
+    // Clear a finished/failed result so the new format starts fresh.
+    if (downloadState === 'completed' || downloadState === 'error') {
+      setDownloadState('idle');
+      setDownloadMsg('');
+      setDownloadPercent(0);
+    }
+  };
 
   const handleLocalTrim = async () => {
     if (!localFile || trimming) return;
@@ -382,6 +370,47 @@ function App() {
        setPlayhead(time);
     }
   };
+
+  const seekWhileDragging = useEffectEvent((t) => handleSeek(t));
+
+  // Handle Dragging Logic
+  useEffect(() => {
+    if (!dragging) return;
+
+    const originalUserSelect = document.body.style.userSelect;
+    document.body.style.userSelect = 'none';
+
+    const onMouseMove = (e) => {
+      if (!spectrumRef.current) return;
+      const rect = spectrumRef.current.getBoundingClientRect();
+      const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+      const duration = activeTab === 'downloader' ? metadata?.duration : localDuration;
+      const time = (x / rect.width) * (duration || 1);
+
+      if (dragging === 'start') {
+        const nextStart = Math.min(time, endTime - 0.1);
+        setStartTime(nextStart);
+        seekWhileDragging(nextStart);
+      } else {
+        const nextEnd = Math.max(time, startTime + 0.1);
+        setEndTime(nextEnd);
+        seekWhileDragging(nextEnd);
+      }
+    };
+
+    const onMouseUp = () => {
+      setDragging(null);
+      document.body.style.userSelect = originalUserSelect;
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      document.body.style.userSelect = originalUserSelect;
+    };
+  }, [dragging, startTime, endTime, metadata?.duration, localDuration, activeTab]);
 
   const togglePlay = () => {
     if (activeTab === 'downloader' && playerRef.current) {
@@ -459,12 +488,6 @@ function App() {
         const data = await window.electron.getInfo(url.trim());
         if (data.error) throw new Error(data.error);
         
-        if (data.isPlaylist) {
-          const selection = {};
-          data.entries.forEach(item => selection[item.id] = true);
-          setSelectedItemIds(selection);
-        }
-
         setMetadata(data);
         setStartTime(0);
         setEndTime(data.duration || 0);
@@ -476,83 +499,6 @@ function App() {
       showToast(err.message || 'Error occurred while loading details.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const processQueueItem = (index, currentQueue) => {
-    if (activeEventSource.current === 'stopped') {
-      setQueueActive(false);
-      setDownloadState('idle');
-      return;
-    }
-
-    if (index >= currentQueue.length) {
-      setQueueActive(false);
-      setDownloadState('completed');
-      setDownloadMsg(`All ${currentQueue.length} downloads completed`);
-      setDownloadPercent(100);
-      return;
-    }
-
-    setQueueIndex(index);
-    const activeItem = currentQueue[index];
-    
-    if (selectedItemIds[activeItem.id] === false) {
-      const updatedQueue = [...currentQueue];
-      updatedQueue[index].status = 'skipped';
-      setQueue(updatedQueue);
-      processQueueItem(index + 1, updatedQueue);
-      return;
-    }
-    
-    const updatedQueue = [...currentQueue];
-    updatedQueue[index].status = 'downloading';
-    setQueue(updatedQueue);
-
-    setDownloadPercent(0);
-    setDownloadMsg(`[${index + 1}/${updatedQueue.length}] Processing: ${activeItem.title}`);
-    setDownloadState('downloading');
-
-    if (window.electron && window.electron.download) {
-      window.electron.download(activeItem.url, format);
-      
-      const removeProgressListener = window.electron.onDownloadProgress((data) => {
-        if (data.status === 'converting') {
-          setDownloadPercent(Math.max(90, Math.min(99, 90 + Math.floor((data.percent || 0) / 10))));
-          setDownloadMsg(`[${index + 1}/${updatedQueue.length}] Converting for Mac (${data.percent || 0}%): ${activeItem.title}`);
-        } else if (data.status === 'processing') {
-          setDownloadPercent(95);
-          setDownloadMsg(`[${index + 1}/${updatedQueue.length}] Finalizing: ${activeItem.title}`);
-          updatedQueue[index].status = 'processing';
-          setQueue([...updatedQueue]);
-        } else {
-          const progress = Math.max(10, Math.floor(data.percent || 0));
-          setDownloadPercent(progress);
-        }
-      });
-
-      const removeCompletedListener = window.electron.onDownloadCompleted(() => {
-        cleanup();
-        updatedQueue[index].status = 'completed';
-        setQueue([...updatedQueue]);
-        setTimeout(() => processQueueItem(index + 1, updatedQueue), 800);
-      });
-
-      const removeErrorListener = window.electron.onDownloadError((data) => {
-        cleanup();
-        showToast(data.error);
-        updatedQueue[index].status = 'error';
-        setQueue([...updatedQueue]);
-        setTimeout(() => processQueueItem(index + 1, updatedQueue), 1500);
-      });
-
-      const cleanup = () => {
-        removeProgressListener();
-        removeCompletedListener();
-        removeErrorListener();
-      };
-
-      activeEventSource.current = { close: () => window.electron.stopDownload() };
     }
   };
 
@@ -616,16 +562,11 @@ function App() {
       activeEventSource.current.close();
     }
     activeEventSource.current = 'stopped';
-    setQueueActive(false);
     setDownloadState('idle');
     setLoading(false);
     setDownloadPercent(0);
     setDownloadMsg('Process stopped by user.');
   };
-
-  const [updateInfo, setUpdateInfo] = useState(null);
-  const [showUpdateModal, setShowUpdateModal] = useState(false);
-  const [isDownloadingUpdate, setIsDownloadingUpdate] = useState(false);
 
   const checkUpdates = async () => {
     if (window.electron) {
@@ -642,7 +583,7 @@ function App() {
         } else {
           showToast(`You're on the latest version (v${update.current || version}).`, 'success');
         }
-      } catch (err) {
+      } catch {
         showToast('Update check failed. Please try again later.');
       }
     }
@@ -660,36 +601,17 @@ function App() {
     if (result && result.error) showToast(`Update failed: ${result.error}`);
   };
 
-  const UpdateModal = ({ info, onClose }) => (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="update-modal" onClick={e => e.stopPropagation()}>
-        <button className="modal-close" onClick={onClose}>&times;</button>
-        <div className="modal-content">
-          <div className="update-icon">🚀</div>
-          <h2>Update Available</h2>
-          <p>A new version <strong>{info.version}</strong> is available.</p>
-          <p className="update-details">Would you like to download and install the update now?</p>
-          <div className="modal-actions">
-            <button 
-              className="btn-primary-stylish" 
-              onClick={handleDownloadUpdate}
-              disabled={isDownloadingUpdate}
-            >
-              {isDownloadingUpdate ? 'Downloading...' : 'Download Now'}
-            </button>
-            <button className="btn-secondary-stylish" onClick={onClose}>Cancel</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
   const isDownloading = downloadState !== 'idle' && downloadState !== 'completed' && downloadState !== 'error';
 
   return (
     <div className="app-shell">
       {showUpdateModal && updateInfo && (
-        <UpdateModal info={updateInfo} onClose={() => setShowUpdateModal(false)} />
+        <UpdateModal
+          info={updateInfo}
+          onClose={() => setShowUpdateModal(false)}
+          onDownload={handleDownloadUpdate}
+          downloading={isDownloadingUpdate}
+        />
       )}
       {toast && (
         <div className={`toast-notification ${toast.type}`}>
@@ -722,14 +644,14 @@ function App() {
         <nav className="sidebar-nav">
           <button 
             className={`nav-item ${activeTab === 'downloader' ? 'active' : ''}`}
-            onClick={() => setActiveTab('downloader')}
+            onClick={() => switchTab('downloader')}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Downloader
           </button>
           <button 
             className={`nav-item ${activeTab === 'trimmer' ? 'active' : ''}`}
-            onClick={() => setActiveTab('trimmer')}
+            onClick={() => switchTab('trimmer')}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3v12"/><path d="M18 9v12"/><path d="M2 12h20"/><path d="M6 12v6a2 2 0 0 0 2 2h12"/></svg>
             Clip Trimmer
@@ -808,7 +730,7 @@ function App() {
                       </div>
                       <div className="playlist-list-container">
                         <div className="playlist-scroll-list">
-                          {filteredPlaylistEntries.map(item => (
+                          {playlistEntries.map(item => (
                             <div key={item.id} className="playlist-row-item">
                               <span className="playlist-row-title">{item.title}</span>
                             </div>
@@ -835,7 +757,7 @@ function App() {
                   <div className="download-actions-row">
                     <div className="format-picker-elegant">
                       <span>Format:</span>
-                      <select value={format} onChange={(e) => setFormat(e.target.value)} className="quality-select-inline" disabled={isDownloading}>
+                      <select value={format} onChange={(e) => handleFormatChange(e.target.value)} className="quality-select-inline" disabled={isDownloading}>
                         <option value="mp3-320">MP3 320kbps</option>
                         <option value="1080p">MP4 1080p</option>
                         <option value="720p">MP4 720p</option>
