@@ -1,15 +1,17 @@
 # SyncWave 🌊
 
-A desktop media app built with React and Electron: download YouTube video and music in studio quality, and trim local audio/video files frame-accurately.
+A desktop media app built with React and Electron: download YouTube video and music in studio quality, and trim local audio/video files on a visual waveform.
 
-Website: https://mo-alhamouri.github.io/SyncWave/
+**Website & download:** [mo-alhamouri.github.io/SyncWave](https://mo-alhamouri.github.io/SyncWave/)
+
+[![SyncWave](Marketing%20Website/og-image.png)](https://mo-alhamouri.github.io/SyncWave/)
 
 ## ✨ Features
 
-- **YouTube Engine**: 1080p / 720p MP4 and 320kbps MP3, including playlists. MP4s use YouTube's native H.264 streams (no re-encoding), with hardware-accelerated conversion as a fallback.
+- **YouTube Engine**: 1080p / 720p MP4 and 320kbps MP3. MP4s use YouTube's native H.264 streams (no re-encoding), with hardware-accelerated conversion as a fallback.
 - **Clip Trimmer**: precise trimming of local audio and video files, with a real loudness waveform, a live playhead and drag & drop.
 - **Self-maintaining engine**: yt-dlp updates itself on every launch and automatically retries with the newest build if YouTube blocks a download.
-- **In-app updates**: the *Update* button downloads and installs new SyncWave releases (v1.2.8+).
+- **In-app updates**: the *Update* button downloads and installs new SyncWave releases (v1.2.10+).
 
 ## 📦 Installing on macOS
 
