@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds SyncWave for Intel (x64) and Apple Silicon (arm64) Macs, each with
-# the FFmpeg/FFprobe binaries for its own CPU. npm only installs the build
+# the FFmpeg/FFprobe and ONNX Runtime (AI engine) binaries for its own CPU. npm only installs the build
 # machine's binaries, so the right ones are fetched with `npm pack` (which
 # never prunes or rewrites node_modules) and dropped in place per build.
 set -euo pipefail
@@ -33,7 +33,12 @@ for ARCH in x64 arm64; do
     file "$b"
     file "$b" | grep -q "$MACHO" || { echo "Wrong architecture for $b"; exit 1; }
   done
+  # onnxruntime-node ships both Mac CPUs; park the other one during this build.
+  ORT="node_modules/onnxruntime-node/bin/napi-v6/darwin"
+  [ -d "$ORT/$OTHER" ] && mv "$ORT/$OTHER" "$WORK/ort-$OTHER"
+  file "$ORT/$ARCH"/libonnxruntime*.dylib | grep -q "$MACHO" || { echo "Wrong architecture for ONNX Runtime"; exit 1; }
   npx electron-builder --mac "--$ARCH" --publish never
+  [ -d "$WORK/ort-$OTHER" ] && mv "$WORK/ort-$OTHER" "$ORT/$OTHER"
 
   # Verify the packaged app really contains only this CPU's processors.
   APPDIR=$([ "$ARCH" = x64 ] && echo dist_electron/mac || echo dist_electron/mac-arm64)
@@ -41,6 +46,10 @@ for ARCH in x64 arm64; do
   echo "$found"
   echo "$found" | grep -q "darwin-$OTHER" && { echo "Found $OTHER binaries in $ARCH build"; exit 1; }
   echo "$found" | grep -q "darwin-$ARCH/ffmpeg" || { echo "ffmpeg missing from $ARCH build"; exit 1; }
+  ort=$(find "$APPDIR/SyncWave.app/Contents/Resources/app.asar.unpacked" -path "*onnxruntime-node/bin*" -type f)
+  echo "$ort"
+  echo "$ort" | grep -q "darwin/$OTHER/" && { echo "Found $OTHER ONNX Runtime in $ARCH build"; exit 1; }
+  echo "$ort" | grep -q "darwin/$ARCH/onnxruntime_binding.node" || { echo "ONNX Runtime missing from $ARCH build"; exit 1; }
 done
 
 # Final check on what actually gets published: unpack each zip and make sure
@@ -50,7 +59,7 @@ for ARCH in x64 arm64; do
   ZIP=$(ls dist_electron/SyncWave-*-"$ARCH".zip)
   CHK="$WORK/check-$ARCH"; rm -rf "$CHK"; mkdir -p "$CHK"
   ditto -x -k "$ZIP" "$CHK"
-  for b in "$CHK/SyncWave.app/Contents/MacOS/SyncWave" $(find "$CHK/SyncWave.app" -type f \( -name ffmpeg -o -name ffprobe \)); do
+  for b in "$CHK/SyncWave.app/Contents/MacOS/SyncWave" $(find "$CHK/SyncWave.app" -type f \( -name ffmpeg -o -name ffprobe -o -name 'libonnxruntime*.dylib' -o -name onnxruntime_binding.node \)); do
     file "$b"
     file "$b" | grep -q "$MACHO" || { echo "ERROR: $ZIP contains a non-$ARCH binary: $b"; exit 1; }
   done

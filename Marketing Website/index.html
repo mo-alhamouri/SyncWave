@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SyncWave | YouTube Downloader &amp; Clip Trimmer for Mac and Windows</title>
-    <meta name="description" content="SyncWave is a free desktop app for Mac and Windows. Download YouTube videos as MP4 (1080p or 720p) or audio as MP3 (320 kbps), then trim any audio or video file on a visual waveform.">
+    <title>SyncWave | YouTube Downloader, Clip Trimmer &amp; Vocal Remover for Mac and Windows</title>
+    <meta name="description" content="SyncWave is a free desktop app for Mac and Windows. Download YouTube videos as MP4 or audio as MP3, trim any audio or video file, and split songs into vocals, drums, bass, guitar, piano and other instruments.">
     <meta name="google-site-verification" content="wdEL5WFD3iwIlJmRWUc89kU089u-cH1VrAbJjFZGS20" />
     <link rel="canonical" href="https://mo-alhamouri.github.io/SyncWave/">
     <link rel="sitemap" type="application/xml" href="sitemap.xml">
@@ -15,15 +15,15 @@
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="SyncWave">
     <meta property="og:url" content="https://mo-alhamouri.github.io/SyncWave/">
-    <meta property="og:title" content="SyncWave | YouTube Downloader &amp; Clip Trimmer for Mac and Windows">
-    <meta property="og:description" content="Free desktop app for Mac and Windows. Download YouTube videos as MP4 (1080p or 720p) or audio as MP3 (320 kbps), then trim any audio or video file on a visual waveform.">
+    <meta property="og:title" content="SyncWave | YouTube Downloader, Clip Trimmer &amp; Vocal Remover for Mac and Windows">
+    <meta property="og:description" content="Free desktop app for Mac and Windows. Download YouTube videos as MP4 or audio as MP3, trim any audio or video file, and split songs into vocals, drums, bass, guitar, piano and other instruments.">
     <meta property="og:image" content="https://mo-alhamouri.github.io/SyncWave/og-image.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
-    <meta property="og:image:alt" content="SyncWave app: Download from YouTube. Trim anything.">
+    <meta property="og:image:alt" content="SyncWave app: Download from YouTube. Trim anything. Split any song.">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="SyncWave | YouTube Downloader &amp; Clip Trimmer for Mac and Windows">
-    <meta name="twitter:description" content="Free desktop app for Mac and Windows. Download YouTube videos as MP4 (1080p or 720p) or audio as MP3 (320 kbps), then trim any audio or video file on a visual waveform.">
+    <meta name="twitter:title" content="SyncWave | YouTube Downloader, Clip Trimmer &amp; Vocal Remover for Mac and Windows">
+    <meta name="twitter:description" content="Free desktop app for Mac and Windows. Download YouTube videos as MP4 or audio as MP3, trim any audio or video file, and split songs into vocals, drums, bass, guitar, piano and other instruments.">
     <meta name="twitter:image" content="https://mo-alhamouri.github.io/SyncWave/og-image.png">
 
     <!-- Structured data: tells Google this page is a free software app -->
@@ -33,10 +33,11 @@
       "@type": "SoftwareApplication",
       "name": "SyncWave",
       "url": "https://mo-alhamouri.github.io/SyncWave/",
-      "description": "Free desktop app to download YouTube videos as MP4 or MP3 and trim audio and video files on a visual waveform.",
+      "description": "Free desktop app to download YouTube videos as MP4 or MP3, trim audio and video files on a visual waveform, and split songs into separate instrument tracks with on-device AI.",
+      "featureList": ["YouTube to MP4 (1080p, 720p) and MP3 (320 kbps)", "Clip trimmer with a visual waveform", "Vocal remover and stem splitter: vocals, drums, bass, guitar, piano, other instruments"],
       "applicationCategory": "MultimediaApplication",
       "operatingSystem": "macOS, Windows",
-      "softwareVersion": "1.2.10",
+      "softwareVersion": "1.3.0",
       "image": "https://mo-alhamouri.github.io/SyncWave/og-image.png",
       "downloadUrl": "https://github.com/mo-alhamouri/SyncWave/releases/latest",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
@@ -65,8 +66,8 @@
     <section class="hero">
         <div class="container">
             <div class="hero-content">
-                <h1 class="gradient-text">Download from YouTube. Trim anything.</h1>
-                <p>SyncWave is a free desktop app for Mac and Windows. Save YouTube videos as MP4 or audio as MP3, then cut exactly the clip you need on a visual waveform.</p>
+                <h1 class="gradient-text">Download from YouTube. Trim anything. Split any song.</h1>
+                <p>SyncWave is a free desktop app for Mac and Windows. Save YouTube videos as MP4 or audio as MP3, cut exactly the clip you need on a visual waveform, and pull any song apart into vocals, drums, bass, guitar, piano and more.</p>
                 <div class="hero-actions">
                     
                     <!-- Dynamic Zero-Maintenance Download Component -->
@@ -81,7 +82,7 @@
                     <script>
                       const GITHUB_USER = "mo-alhamouri";
                       const GITHUB_REPO = "SyncWave";
-                      const FALLBACK_VERSION = "v1.2.10"; // Shown only if GitHub can't be reached
+                      const FALLBACK_VERSION = "v1.3.0"; // Shown only if GitHub can't be reached
 
                       async function initLatestDownload() {
                         const downloadBtn = document.getElementById("download-btn");
@@ -288,7 +289,7 @@
 
     <section id="features" class="features">
         <div class="container">
-            <h2 class="section-title">One App. <span class="gradient-text">Two Tools.</span></h2>
+            <h2 class="section-title">One App. <span class="gradient-text">Three Tools.</span></h2>
             
             <div class="feature-item">
                 <div class="feature-text">
@@ -326,6 +327,25 @@
                 </div>
             </div>
 
+            <div class="feature-item">
+                <div class="feature-text">
+                    <div class="feature-icon">🎚️</div>
+                    <h3>Vocal Remover &amp; Stem Splitter</h3>
+                    <p>Drop in a song and SyncWave&rsquo;s AI splits it into separate tracks. Remove the vocals for karaoke, isolate the guitar to learn a part, or keep just the drums and bass. Listen to any mix before you save it.</p>
+                    <ul class="feature-list">
+                        <li>Vocals, drums, bass, guitar, piano and other instruments</li>
+                        <li>Fast mode, or Best quality mode for cleaner tracks</li>
+                        <li>Mute and solo tracks while they play in sync</li>
+                        <li>Save one track or your own mix as MP3 (320 kbps)</li>
+                        <li>Runs on your computer; your music is never uploaded</li>
+                    </ul>
+                </div>
+                <div class="feature-preview clickable-image">
+                    <img src="App Screenshots/Feature3_Vocal_Remover.png" alt="SyncWave Vocal Remover with guitar and other instruments soloed">
+                    <div class="expand-hint">Click to expand</div>
+                </div>
+            </div>
+
         </div>
     </section>
 
@@ -336,7 +356,7 @@
                 <div class="specs-grid">
                     <div class="spec-card">
                         <h4>Private by Design</h4>
-                        <p>Downloads and clips never leave your computer. The app has no accounts and no tracking.</p>
+                        <p>Downloads, clips and separated tracks never leave your computer. The app has no accounts and no tracking.</p>
                     </div>
                     <div class="spec-card">
                         <h4>Mac and Windows</h4>
@@ -422,7 +442,7 @@
                 <div class="logo">
                     <span class="logo-text">SyncWave</span>
                 </div>
-                <p>&copy; 2026 SyncWave. Free YouTube downloader and clip trimmer. Only download content you have the right to use.</p>
+                <p>&copy; 2026 SyncWave. Free YouTube downloader, clip trimmer and vocal remover. Only download and edit content you have the right to use.</p>
                 <div class="footer-links">
                     <a href="mailto:mo_designs_codes_tech@yahoo.com">Support</a>
                 </div>

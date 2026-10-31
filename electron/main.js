@@ -6,6 +6,7 @@ const engine = require('./engine');
 const updater = require('./updater');
 const convert = require('./convert');
 const { getWaveform } = require('./waveform');
+const stems = require('./stems');
 
 // --- ERROR HANDLING ---
 function reportError(title, error) {
@@ -237,10 +238,10 @@ ipcMain.on('stop-download', () => {
 });
 
 // --- IPC: TRIMMER ---
-ipcMain.handle('get-waveform', async (event, filePath) => {
+ipcMain.handle('get-waveform', async (event, filePath, opts) => {
     try {
         await waitForEngine();
-        return await getWaveform(engine.state.ffmpegPath, filePath);
+        return await getWaveform(engine.state.ffmpegPath, filePath, 1200, !!(opts && opts.raw));
     } catch (e) { return { error: e.message }; }
 });
 
@@ -280,6 +281,14 @@ app.whenReady().then(async () => {
         fs.mkdirSync(tempDownloadsDir, { recursive: true });
 
         try { require('fix-path')(); } catch (e) {}
+
+        // Vocal Remover / Stem Splitter (models, separation jobs, saving)
+        stems.init({
+            send,
+            waitForEngine,
+            getFfmpegPath: () => engine.state.ffmpegPath,
+            getDownloadsDir: () => finalDownloadsDir,
+        });
 
         protocol.registerFileProtocol('media', (request, callback) => {
             const url = request.url.replace('media://', '');

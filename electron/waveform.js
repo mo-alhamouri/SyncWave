@@ -7,7 +7,7 @@ const { spawn } = require('child_process');
 
 const SAMPLE_RATE = 4000;
 
-function getWaveform(ffmpegPath, file, buckets = 1200) {
+function getWaveform(ffmpegPath, file, buckets = 1200, raw = false) {
     return new Promise((resolve) => {
         const p = spawn(ffmpegPath, ['-hide_banner', '-loglevel', 'error', '-i', file, '-vn', '-ac', '1', '-ar', String(SAMPLE_RATE), '-f', 's16le', '-acodec', 'pcm_s16le', 'pipe:1']);
         const chunks = [];
@@ -35,7 +35,8 @@ function getWaveform(ffmpegPath, file, buckets = 1200) {
                 rms[i] = Math.sqrt(sum / (end - start));
             }
             // Normalise so quiet recordings still use the full height.
-            const max = Math.max(...peaks, 1e-6);
+            // (raw: keep real levels, used to compare stems with each other)
+            const max = raw ? 1 : Math.max(...peaks, 1e-6);
             resolve({
                 peaks: peaks.map((v) => +(v / max).toFixed(4)),
                 rms: rms.map((v) => +(v / max).toFixed(4)),

@@ -1,4 +1,5 @@
 import { useState, useEffect, useEffectEvent, useRef } from 'react';
+import StemSplitter from './StemSplitter.jsx';
 
 // Helper to format duration in seconds to MM:SS or HH:MM:SS
 function formatDuration(seconds) {
@@ -179,6 +180,7 @@ function App() {
   const hiddenAudioRef = useRef(null);
   const inputRef = useRef(null);
   const spectrumRef = useRef(null);
+  const stemsRef = useRef(null);
   
   // Trimming State
   const [startTime, setStartTime] = useState(0);
@@ -325,6 +327,7 @@ function App() {
 
   const switchTab = (tab) => {
     if (tab !== 'trimmer') stopPlayback(); // stop playback when leaving the trimmer
+    if (tab !== 'stems' && stemsRef.current) stemsRef.current.pause();
     setActiveTab(tab);
   };
 
@@ -656,6 +659,13 @@ function App() {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3v12"/><path d="M18 9v12"/><path d="M2 12h20"/><path d="M6 12v6a2 2 0 0 0 2 2h12"/></svg>
             Clip Trimmer
           </button>
+          <button 
+            className={`nav-item ${activeTab === 'stems' ? 'active' : ''}`}
+            onClick={() => switchTab('stems')}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="22"/></svg>
+            Vocal Remover
+          </button>
         </nav>
 
         <div className="sidebar-footer">
@@ -920,6 +930,11 @@ function App() {
             </div>
           </div>
         )}
+
+        {/* Kept mounted so separated stems survive switching tabs */}
+        <div style={{ display: activeTab === 'stems' ? 'block' : 'none' }}>
+          <StemSplitter ref={stemsRef} active={activeTab === 'stems'} showToast={showToast} />
+        </div>
 
       </div>
     </div>

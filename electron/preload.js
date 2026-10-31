@@ -32,9 +32,17 @@ contextBridge.exposeInMainWorld('electron', {
     selectFile: () => ipcRenderer.invoke('select-file'),
     // Path of a file dropped onto the window (drag & drop).
     getPathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch (e) { return file && file.path; } },
-    getWaveform: (path) => ipcRenderer.invoke('get-waveform', path),
+    getWaveform: (path, opts) => ipcRenderer.invoke('get-waveform', path, opts),
     trimLocalFile: (path, format, start, end) => ipcRenderer.invoke('trim-local-file', path, format, start, end),
     clearBadge: () => ipcRenderer.send('clear-badge'),
+
+    // Vocal Remover / Stem Splitter
+    getStemModels: () => ipcRenderer.invoke('stems-models'),
+    separateStems: (path, mode) => ipcRenderer.invoke('stems-separate', path, mode),
+    cancelStems: () => ipcRenderer.send('stems-cancel'),
+    onStemsProgress: on('stems-progress'),
+    readStemFile: (path) => ipcRenderer.invoke('stems-read', path),
+    exportStems: (paths, baseName, label) => ipcRenderer.invoke('stems-export', paths, baseName, label),
 
     // Downloads
     download: (url, format, start, end) => ipcRenderer.send('start-download', url, format, start, end),

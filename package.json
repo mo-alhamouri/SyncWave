@@ -1,6 +1,6 @@
 {
   "name": "syncwave-desktop",
-  "version": "1.2.10",
+  "version": "1.3.0",
   "main": "electron/main.js",
   "scripts": {
     "setup": "npm install && npm run setup:frontend",
@@ -29,11 +29,13 @@
     },
     "files": [
       "electron/**/*",
-      "frontend/dist/**/*"
+      "frontend/dist/**/*",
+      "!**/node_modules/onnxruntime-node/bin/napi-v6/linux/**"
     ],
     "asarUnpack": [
       "**/node_modules/@ffmpeg-installer/**/*",
-      "**/node_modules/@ffprobe-installer/**/*"
+      "**/node_modules/@ffprobe-installer/**/*",
+      "**/node_modules/onnxruntime-node/**"
     ],
     "mac": {
       "category": "public.app-category.utilities",
@@ -44,12 +46,19 @@
       ],
       "identity": null,
       "hardenedRuntime": false,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "files": [
+        "!**/node_modules/onnxruntime-node/bin/napi-v6/win32/**"
+      ]
     },
     "win": {
       "artifactName": "${productName}-Setup-${version}.${ext}",
       "target": [
         "nsis"
+      ],
+      "files": [
+        "!**/node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
+        "!**/node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"
       ]
     },
     "afterPack": "scripts/adhoc-sign.js"
@@ -66,8 +75,9 @@
     "@ffprobe-installer/ffprobe": "^2.1.2",
     "electron-updater": "^6.1.7",
     "fix-path": "^3.0.0",
+    "onnxruntime-node": "1.23.2",
     "yt-dlp-wrap": "^2.3.12"
   },
-  "description": "SyncWave - download, trim and manage your media.",
+  "description": "SyncWave - download, trim, split and manage your media.",
   "author": "Mo Alhamouri"
 }
