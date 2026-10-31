@@ -22,8 +22,10 @@ const MODELS = {
         sha256: 'bb4eee07e48847fdc0d93190f74b5a4b52525ccbfb2a3024261c3a9c6f6b9077',
     },
     best: {
-        label: 'Best quality', file: 'bs_roformer_sw_6stem_fp16.onnx', size: 352778874,
-        sha256: 'd3d2bac77a7023282cb5f35a5807179e34076b60589867b572275f1a8ec36444',
+        // Same weights as bs_roformer_sw_6stem_fp16.onnx (v1.3.0) with the attention
+        // Einsums rewritten as MatMul: identical output, ~15% faster on CPU.
+        label: 'Best quality', file: 'bs_roformer_sw_6stem_fp16_mm.onnx', size: 352781094,
+        sha256: 'b0df0d59c4767d3a6e2252f7025bd1a30e2a49d590c97e04dd4b5908957270b9',
     },
 };
 
@@ -72,6 +74,17 @@ async function ensureModel(mode, onProgress) {
         })().finally(() => { delete downloading[mode]; });
     }
     return downloading[mode];
+}
+
+// Delete model files the current version no longer uses (e.g. the v1.3.0
+// Best quality model), so an update never leaves 350 MB behind.
+function removeOldModels() {
+    const keep = new Set(Object.values(MODELS).flatMap((m) => [m.file, `${m.file}.verified`]));
+    let entries = [];
+    try { entries = fs.readdirSync(modelsDir); } catch { return; }
+    for (const f of entries) {
+        if (!keep.has(f)) { try { fs.rmSync(path.join(modelsDir, f), { force: true }); } catch { /* in use or gone */ } }
+    }
 }
 
 function clearOldStems() {
@@ -163,6 +176,7 @@ function init(options) {
     modelsDir = path.join(app.getPath('userData'), 'models');
     stemsRoot = path.join(app.getPath('userData'), 'stems');
     clearOldStems(); // stems from a previous session
+    removeOldModels();
 
     ipcMain.handle('stems-models', () => Object.fromEntries(Object.entries(MODELS).map(([k, m]) => [k, { label: m.label, sizeMB: mb(m.size), ready: isModelReady(k) }])));
     ipcMain.handle('stems-separate', (e, filePath, mode) => separate(filePath, mode));

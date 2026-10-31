@@ -58,7 +58,7 @@ The app downloads its models from the `models-v1` GitHub release (a **pre-releas
 | Mode | File | Size | Source |
 |---|---|---|---|
 | Fast | `htdemucs_6s.onnx` | 115 MB | Demucs v4 `htdemucs_6s` by Meta AI, exported to ONNX (network only; STFT runs in JS) |
-| Best quality | `bs_roformer_sw_6stem_fp16.onnx` | 353 MB | BS-RoFormer SW 6-stem (community weights, rehosted by jarredou), ONNX export by elicwhite |
+| Best quality | `bs_roformer_sw_6stem_fp16_mm.onnx` | 353 MB | BS-RoFormer SW 6-stem (community weights, rehosted by jarredou), ONNX export by elicwhite; attention Einsums rewritten as MatMul (same output, ~15% faster). v1.3.0 used `bs_roformer_sw_6stem_fp16.onnx`. |
 
 The code is MIT, but the model weights are not covered by it: Meta describes the Demucs weights as for research use, and the BS-RoFormer SW weights have no stated license. ONNX Runtime is pinned to `onnxruntime-node@1.23.2`, the last version with Intel Mac support.
 

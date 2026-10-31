@@ -3,7 +3,7 @@
 //
 // Two models are supported:
 //   fast - Demucs v4 "htdemucs_6s" (Meta)        ~1-2 min per song
-//   best - BS-RoFormer SW 6-stem (community)     ~5-10 min per song, cleaner
+//   best - BS-RoFormer SW 6-stem (community)     ~3-7 min per song, cleaner
 //
 // The ONNX files hold only the neural network. The spectrogram (STFT) before
 // it and the inverse (iSTFT) after it run here in JavaScript, matching
@@ -23,12 +23,14 @@ const MODELS = {
         // Demucs: core network only; input = audio chunk + its spectrogram.
         sources: ['drums', 'bass', 'other', 'vocals', 'guitar', 'piano'],
         chunk: 343980, // 7.8 s, the model's training length
+        overlap: 0.25,
         normalizeSong: true,
     },
     best: {
         // BS-RoFormer: spectrogram in, masked spectrogram out.
         sources: ['bass', 'drums', 'other', 'vocals', 'guitar', 'piano'],
         chunk: 176400, // 4 s, fixed by the exported model
+        overlap: 0.10, // ~17% less work than 0.25; checked by ear (v1.3.1)
         normalizeSong: false,
     },
 };
@@ -284,7 +286,7 @@ async function separate(opts) {
         for (const ch of audio) for (let i = 0; i < L; i++) ch[i] = (ch[i] - mean) / std;
     }
 
-    const seg = cfg.chunk, stride = Math.floor(seg * 0.75), w = triangle(seg);
+    const seg = cfg.chunk, stride = Math.floor(seg * (1 - cfg.overlap)), w = triangle(seg);
     const S = cfg.sources.length;
     const acc = cfg.sources.map(() => [new Float32Array(L), new Float32Array(L)]);
     const sumW = new Float32Array(L);

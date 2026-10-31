@@ -23,7 +23,7 @@ const STEMS = {
 const ORDER = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'];
 const MODES = {
   fast: { label: 'Fast', time: 'About 1–3 minutes per song', note: 'Good separation, much quicker.' },
-  best: { label: 'Best quality', time: 'About 5–10 minutes per song', note: 'Cleaner tracks with less bleed between instruments.' },
+  best: { label: 'Best quality', time: 'About 3–7 minutes per song', note: 'Cleaner tracks with less bleed between instruments.' },
 };
 const stemHint = (id, ids) => (id === 'other' && ids.includes('guitar') ? 'Synths, strings and the rest' : STEMS[id].hint);
 const MEDIA_EXT = /\.(mp3|wav|ogg|oga|opus|flac|m4a|aac|mp4|mov|m4v|mkv|webm|avi)$/i;
