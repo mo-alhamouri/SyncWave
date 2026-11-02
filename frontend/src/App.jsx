@@ -625,25 +625,25 @@ function App() {
           <button onClick={() => setToast(null)} className="toast-close">&times;</button>
         </div>
       )}
+      {/* Minimize / maximize, top right of the window */}
+      <div className="window-controls-container">
+         <button onClick={() => window.electron.minimize()} className="win-btn minimize" title="Minimize">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+         </button>
+         <button onClick={toggleMaximize} className="win-btn maximize" title={isMaximized ? "Restore" : "Maximize"}>
+            {isMaximized ? (
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><rect x="4" y="4" width="16" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="4" y1="9" x2="20" y2="9"/></svg>
+            ) : (
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+            )}
+         </button>
+      </div>
       <div className="sidebar">
         <div className="sidebar-drag-area"></div>
         <div className="sidebar-logo">
           <span>SyncWave</span>
         </div>
         
-        <div className="window-controls-container">
-           <button onClick={() => window.electron.minimize()} className="win-btn minimize" title="Minimize">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-           </button>
-           <button onClick={toggleMaximize} className="win-btn maximize" title={isMaximized ? "Restore" : "Maximize"}>
-              {isMaximized ? (
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><rect x="4" y="4" width="16" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="4" y1="9" x2="20" y2="9"/></svg>
-              ) : (
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
-              )}
-           </button>
-        </div>
-
         <nav className="sidebar-nav">
           <button 
             className={`nav-item ${activeTab === 'downloader' ? 'active' : ''}`}

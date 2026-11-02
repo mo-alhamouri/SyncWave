@@ -76,12 +76,12 @@ body {
 }
 
 .window-controls-container {
-  position: absolute;
-  top: 15px;
-  right: 15px;
+  position: fixed;
+  top: 14px;
+  right: 18px;
   display: flex;
   gap: 12px;
-  z-index: 10;
+  z-index: 50;
   -webkit-app-region: no-drag;
 }
 
@@ -271,7 +271,7 @@ body {
 /* Toast Notification */
 .toast-notification {
   position: fixed;
-  top: 2rem;
+  top: 4rem; /* below the window buttons */
   right: 2rem;
   z-index: 9999;
   background: rgba(13, 17, 28, 0.9);

@@ -8,6 +8,12 @@ const convert = require('./convert');
 const { getWaveform } = require('./waveform');
 const stems = require('./stems');
 
+// Intel Macs with two graphics chips (e.g. MacBook Pro with Intel + AMD): start
+// on the stronger chip. Otherwise macOS switches chips when the Vocal Remover
+// starts using it, and the window stops drawing parts of the screen. No effect
+// on Macs with one graphics chip; Apple Silicon and Windows are not affected.
+if (process.platform === 'darwin' && process.arch === 'x64') app.commandLine.appendSwitch('force_high_performance_gpu');
+
 // --- ERROR HANDLING ---
 function reportError(title, error) {
     const message = error instanceof Error ? `${error.message}\n\nStack:\n${error.stack}` : String(error);
@@ -326,8 +332,9 @@ function createWindow() {
     const distIndex = path.join(__dirname, '../frontend/dist/index.html');
     if (isDev) mainWindow.loadURL('http://localhost:5173').catch(() => mainWindow.loadFile(distIndex).catch(() => {}));
     else mainWindow.loadFile(distIndex).catch(() => {});
-    mainWindow.on('closed', () => { mainWindow = null; });
+    // Closing the window stops any separation (its result could not be shown).
+    mainWindow.on('closed', () => { mainWindow = null; stems.cancel(); });
 }
 
-app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+app.on('activate', () => { if (!mainWindow) createWindow(); }); // the hidden graphics-chip window does not count
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

@@ -2,8 +2,12 @@
 //
 // - Downloads each AI model the first time it is used, from the SyncWave
 //   "models-v1" GitHub release, and checks its SHA-256 before using it.
-// - Runs each separation in a separate process (stems-worker.js) and relays
-//   progress to the window. Cancel kills that process.
+// - Runs each separation on the graphics chip when it can (gpu.js, about
+//   3-4x faster), otherwise in a separate process on the processor
+//   (stems-worker.js), and relays progress to the window. The first time a
+//   model runs on the graphics chip, its first chunk is compared with the
+//   processor's result; if they differ, or anything fails, SyncWave switches
+//   to the processor and remembers that for this model.
 // - Serves the finished stems to the window and saves single stems or a
 //   custom mix to the Downloads folder as MP3 320 kbps.
 'use strict';
@@ -13,7 +17,10 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const net = require('./net');
-const { decodeAudio, encodeMp3 } = require('./stems-engine');
+const gpu = require('./gpu');
+const { decodeAudio, encodeMp3, snrDb } = require('./stems-engine');
+
+const GPU_MIN_SNR_DB = 30; // the graphics chip measured ~84 dB; garbage is ~0 dB
 
 const MODEL_BASE = 'https://github.com/mo-alhamouri/SyncWave/releases/download/models-v1/';
 const MODELS = {
@@ -91,12 +98,131 @@ function clearOldStems() {
     try { fs.rmSync(stemsRoot, { recursive: true, force: true }); } catch { /* nothing to clear */ }
 }
 
+// --- Graphics chip state, remembered per app version and model ---
+// { "1.4.0:<engine>:best": "ok" | "failed", ...:reason, ...:failedAt }
+// - "ok": passed the one-time check.
+// - "failed": a real problem (wrong result, crash...). The processor is used,
+//   and the graphics chip is tried again after GPU_RETRY_DAYS or an update.
+// - A graphics chip that is briefly unavailable (e.g. macOS still switching
+//   to it) is not remembered as failed until it happens GPU_MAX_MISSES times in a row.
+const GPU_RETRY_DAYS = 7;
+const GPU_MAX_MISSES = 3;
+function gpuStateFile() { return path.join(app.getPath('userData'), 'gpu-check.json'); }
+function readGpuState() {
+    try { return JSON.parse(fs.readFileSync(gpuStateFile(), 'utf8')) || {}; } catch { return {}; }
+}
+function gpuKey(mode) { return `${app.getVersion()}:${gpu.ENGINE_ID}:${mode}`; }
+function writeGpuState(state) {
+    try { fs.writeFileSync(gpuStateFile(), JSON.stringify(state, null, 2)); } catch { /* not critical */ }
+}
+function setGpuState(mode, value, reason) {
+    const state = readGpuState(), k = gpuKey(mode);
+    state[k] = value;
+    if (reason) state[`${k}:reason`] = String(reason).slice(0, 300);
+    if (value === 'failed') state[`${k}:failedAt`] = new Date().toISOString();
+    else delete state[`${k}:failedAt`];
+    delete state[`${k}:misses`];
+    writeGpuState(state);
+}
+// A brief "no graphics chip" counts as a miss; only repeated misses mark it failed.
+function recordGpuMiss(mode, reason) {
+    const state = readGpuState(), k = gpuKey(mode);
+    const misses = (Number(state[`${k}:misses`]) || 0) + 1;
+    if (misses >= GPU_MAX_MISSES) { setGpuState(mode, 'failed', reason); return; }
+    state[`${k}:misses`] = misses;
+    state[`${k}:reason`] = String(reason).slice(0, 300);
+    writeGpuState(state);
+}
+function gpuBlocked(mode) {
+    if (process.env.SYNCWAVE_GPU_RETRY) return false;
+    const state = readGpuState(), k = gpuKey(mode);
+    if (state[k] !== 'failed') return false;
+    const at = Date.parse(state[`${k}:failedAt`] || '');
+    return Number.isFinite(at) && Date.now() - at < GPU_RETRY_DAYS * 864e5;
+}
+
+// Run one job on the processor in a utilityProcess. onMessage(msg, finish) handles
+// the worker's messages; resolves with whatever finish() is called with.
+function runWorker(thisJob, message, onMessage) {
+    return new Promise((resolve) => {
+        const child = utilityProcess.fork(path.join(__dirname, 'stems-worker.js'), [], { serviceName: 'SyncWave Stem Splitter' });
+        thisJob.children.add(child);
+        let settled = false;
+        const finish = (r) => {
+            if (settled) return;
+            settled = true;
+            thisJob.children.delete(child);
+            try { child.kill(); } catch { /* exited */ }
+            resolve(r);
+        };
+        child.on('message', (msg) => {
+            if (msg.type === 'error') finish({ error: msg.error });
+            else onMessage(msg, finish);
+        });
+        child.on('exit', (code) => finish(thisJob.cancelled ? { cancelled: true } : { error: `The separation stopped unexpectedly (code ${code}). Your computer may be low on memory.` }));
+        child.postMessage(message);
+    });
+}
+
+function runOnProcessor(thisJob, base, send) {
+    return runWorker(thisJob, { type: 'separate', ...base }, (msg, finish) => {
+        if (msg.type === 'progress') send('stems-progress', { percent: msg.percent, message: msg.message });
+        else if (msg.type === 'done') finish({ success: true, stems: msg.result.stems, duration: msg.result.duration });
+    });
+}
+
+// One-time check: the same first chunk on the processor must match the graphics chip.
+async function checkAgainstProcessor(thisJob, base, chunk, out, send) {
+    send('stems-progress', { percent: 3, message: 'Checking the graphics chip (one time only)...' });
+    const r = await runWorker(thisJob, { type: 'chunk', mode: base.mode, modelPath: base.modelPath, chunk }, (msg, finish) => {
+        if (msg.type === 'chunk-done') finish({ out: msg.out });
+    });
+    if (!r.out) return { ok: false, error: r.cancelled ? 'Cancelled' : r.error };
+    const snr = snrDb(r.out, out);
+    if (!(snr >= GPU_MIN_SNR_DB)) return { ok: false, error: `The graphics chip result differs from the processor (${snr.toFixed(1)} dB).` };
+    return { ok: true, snr };
+}
+
+async function runOnGraphicsChip(thisJob, base, send) {
+    const needsCheck = readGpuState()[gpuKey(base.mode)] !== 'ok';
+    let checked = null;
+    const runner = gpu.run({ ...base, check: needsCheck }, {
+        onProgress: (percent, message) => send('stems-progress', { percent, message }),
+        onCheck: async (chunk, out) => {
+            const r = await checkAgainstProcessor(thisJob, base, chunk, out, send);
+            if (r.ok) checked = r.snr;
+            return r;
+        },
+    });
+    thisJob.gpu = runner;
+    const result = await runner.promise;
+    thisJob.gpu = null;
+    if (result.success && checked !== null) setGpuState(base.mode, 'ok', `${checked.toFixed(1)} dB`);
+    else if (result.success) { // clear any earlier brief misses
+        const state = readGpuState(), k = gpuKey(base.mode);
+        if (state[`${k}:misses`]) { delete state[`${k}:misses`]; writeGpuState(state); }
+    }
+    return result;
+}
+
 async function separate(filePath, mode) {
     if (!MODELS[mode]) return { error: 'Unknown separation mode.' };
     if (job) return { error: 'A separation is already running.' };
     if (!filePath || !fs.existsSync(filePath)) return { error: 'That file could not be found.' };
-    const send = ctx.send;
-    const thisJob = { cancelled: false, child: null };
+    // Progress goes to the window, and is logged with timings (shown in the
+    // terminal when running from source) to compare graphics chip vs processor.
+    const t0 = Date.now();
+    let lastPart = t0;
+    const send = (channel, p) => {
+        if (channel === 'stems-progress' && p && p.message && !/Downloading/.test(p.message)) {
+            const now = Date.now();
+            const part = /\(part \d+ of \d+\)/.test(p.message) ? ` (+${((now - lastPart) / 1000).toFixed(1)} s)` : '';
+            if (part) lastPart = now;
+            console.log(`[stems] ${((now - t0) / 1000).toFixed(1)} s: ${p.message}${part}`);
+        }
+        ctx.send(channel, p);
+    };
+    const thisJob = { cancelled: false, children: new Set(), gpu: null };
     job = thisJob;
     try {
         await ctx.waitForEngine();
@@ -114,19 +240,25 @@ async function separate(filePath, mode) {
 
         clearOldStems(); // keep only the current song's stems on disk
         const outDir = path.join(stemsRoot, `job-${Date.now()}`);
-        return await new Promise((resolve) => {
-            const child = utilityProcess.fork(path.join(__dirname, 'stems-worker.js'), [], { serviceName: 'SyncWave Stem Splitter' });
-            thisJob.child = child;
-            let settled = false;
-            const finish = (r) => { if (settled) return; settled = true; try { child.kill(); } catch { /* exited */ } resolve(r); };
-            child.on('message', (msg) => {
-                if (msg.type === 'progress') send('stems-progress', { percent: msg.percent, message: msg.message });
-                else if (msg.type === 'done') finish({ success: true, stems: msg.result.stems, duration: msg.result.duration, mode });
-                else if (msg.type === 'error') finish({ error: msg.error });
-            });
-            child.on('exit', (code) => finish(thisJob.cancelled ? { cancelled: true } : { error: `The separation stopped unexpectedly (code ${code}). Your computer may be low on memory.` }));
-            child.postMessage({ mode, modelPath: model, input: filePath, outDir, ffmpegPath: ctx.getFfmpegPath() });
-        });
+        const base = { mode, modelPath: model, input: filePath, outDir, ffmpegPath: ctx.getFfmpegPath() };
+
+        // SYNCWAVE_GPU_RETRY=1 tries the graphics chip again even after a failure (testing).
+        if (gpu.isAvailable() && !gpuBlocked(mode)) {
+            const r = await runOnGraphicsChip(thisJob, base, send);
+            if (r.success) { console.log(`[stems] ${mode} finished on the graphics chip in ${((Date.now() - t0) / 1000).toFixed(0)} s`); return { ...r, mode, engine: 'gpu' }; }
+            if (r.cancelled || thisJob.cancelled) return { cancelled: true };
+            console.warn('[stems] Graphics chip failed, using the processor:', r.error);
+            if (r.soft) recordGpuMiss(mode, r.error);
+            else setGpuState(mode, 'failed', r.error);
+            try { fs.rmSync(outDir, { recursive: true, force: true }); } catch { /* nothing written */ }
+            send('stems-progress', { percent: 0, message: 'Switching to the processor...' });
+        }
+
+        const why = readGpuState()[`${gpuKey(mode)}:reason`];
+        console.log(`[stems] ${mode} running on the processor${gpu.isAvailable() && why ? `. Graphics chip failed earlier: ${why}` : ''}`);
+        const r = await runOnProcessor(thisJob, base, send);
+        if (r.success) console.log(`[stems] ${mode} finished on the processor in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+        return r.success ? { ...r, mode, engine: 'cpu' } : r;
     } finally {
         if (job === thisJob) job = null;
     }
@@ -135,7 +267,8 @@ async function separate(filePath, mode) {
 function cancel() {
     if (!job) return;
     job.cancelled = true;
-    if (job.child) { try { job.child.kill(); } catch { /* already gone */ } }
+    if (job.gpu) job.gpu.cancel();
+    for (const child of job.children) { try { child.kill(); } catch { /* already gone */ } }
 }
 
 function uniquePath(dir, base, ext) {
@@ -189,4 +322,4 @@ function init(options) {
     app.on('before-quit', () => cancel());
 }
 
-module.exports = { init, MODELS };
+module.exports = { init, cancel, MODELS };

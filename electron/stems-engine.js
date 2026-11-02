@@ -258,9 +258,41 @@ function triangle(n) {
     return w;
 }
 
+function createCpuSession(ort, modelPath) {
+    return ort.InferenceSession.create(modelPath, {
+        executionProviders: ['cpu'], graphOptimizationLevel: 'all', enableCpuMemArena: false, enableMemPattern: false,
+    });
+}
+
+function runChunk(ort, session, mode, chunk) {
+    return (mode === 'fast' ? runDemucsChunk : runRoformerChunk)(ort, session, chunk);
+}
+
+// How close two chunk outputs are (all stems, both channels), in dB.
+// Used to check the graphics chip gives the same result as the processor.
+function snrDb(ref, out) {
+    let sig = 0, err = 0;
+    for (let s = 0; s < ref.length; s++) {
+        for (let c = 0; c < ref[s].length; c++) {
+            const a = ref[s][c], b = out[s][c];
+            if (!b || b.length !== a.length) return -Infinity;
+            for (let i = 0; i < a.length; i++) {
+                const d = a[i] - b[i];
+                if (!Number.isFinite(b[i])) return -Infinity;
+                sig += a[i] * a[i]; err += d * d;
+            }
+        }
+    }
+    if (err === 0) return Infinity;
+    return 10 * Math.log10((sig || 1e-20) / err);
+}
+
 /**
  * Separate one file into stems and save each as MP3 320 kbps.
  * opts: { ort, mode: 'fast'|'best', modelPath, input, outDir, ffmpegPath, onProgress(percent, message) }
+ * Optional: createSession() (default: CPU session from modelPath),
+ *           onFirstChunk(chunk, out) awaited after the first chunk (a throw stops the job),
+ *           where: text added to the progress message (e.g. ' on the graphics chip').
  * Returns { stems: { vocals, drums, bass, guitar, piano, other, instrumental }, duration }.
  */
 async function separate(opts) {
@@ -274,9 +306,8 @@ async function separate(opts) {
     const L = audio[0].length;
 
     progress(1, 'Loading the AI model...');
-    const session = await ort.InferenceSession.create(modelPath, {
-        executionProviders: ['cpu'], graphOptimizationLevel: 'all', enableCpuMemArena: false, enableMemPattern: false,
-    });
+    const session = opts.createSession ? await opts.createSession() : await createCpuSession(ort, modelPath);
+    const where = opts.where || '';
 
     let mean = 0, std = 1;
     if (cfg.normalizeSong) { // like the Demucs CLI: normalise the whole song first
@@ -302,6 +333,7 @@ async function separate(opts) {
         const cs = Math.max(0, start), ce = Math.min(L, start + seg);
         for (let c = 0; c < 2; c++) chunk[c].set(audio[c].subarray(cs, ce), cs - start);
         const out = await run(ort, session, chunk);
+        if (k === 0 && opts.onFirstChunk) await opts.onFirstChunk(chunk, out);
         const from = Math.floor(delta / 2);
         for (let s = 0; s < S; s++) {
             for (let c = 0; c < 2; c++) {
@@ -310,7 +342,7 @@ async function separate(opts) {
             }
         }
         for (let i = 0; i < length; i++) sumW[off + i] += w[i];
-        progress(2 + Math.round(((k + 1) / offsets.length) * 90), `Separating the instruments... (part ${k + 1} of ${offsets.length})`);
+        progress(2 + Math.round(((k + 1) / offsets.length) * 90), `Separating the instruments${where}... (part ${k + 1} of ${offsets.length})`);
     }
     if (session.release) await session.release();
 
@@ -339,4 +371,4 @@ async function separate(opts) {
     return { stems, duration: L / SAMPLE_RATE };
 }
 
-module.exports = { separate, decodeAudio, encodeMp3, MODELS, SAMPLE_RATE, stft, istft, reflectPad, demucsSpec, runDemucsChunk, runRoformerChunk };
+module.exports = { separate, createCpuSession, runChunk, snrDb, decodeAudio, encodeMp3, MODELS, SAMPLE_RATE, stft, istft, reflectPad, demucsSpec, runDemucsChunk, runRoformerChunk };

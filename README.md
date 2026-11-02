@@ -39,6 +39,7 @@ Project layout:
 - `electron/engine.js`: yt-dlp / Deno / FFmpeg management (auto-update + retry)
 - `electron/updater.js`: in-app updater (GitHub Releases)
 - `electron/stems.js`, `stems-worker.js`, `stems-engine.js`: Vocal Remover (model downloads, separation in a background process, STFT/iSTFT + ONNX Runtime)
+- `electron/gpu.js`, `electron/gpu/`: runs the separation on the graphics chip (WebGPU) in a hidden window with ONNX Runtime Web; falls back to the processor if it fails or its first result differs (checked once per model and app version, saved in `gpu-check.json` in the app's data folder)
 - `frontend/`: React UI (Vite)
 - `Marketing Website/`: the GitHub Pages site and `install.sh`
 - `scripts/adhoc-sign.js`: macOS ad-hoc signing hook for electron-builder
@@ -60,7 +61,7 @@ The app downloads its models from the `models-v1` GitHub release (a **pre-releas
 | Fast | `htdemucs_6s.onnx` | 115 MB | Demucs v4 `htdemucs_6s` by Meta AI, exported to ONNX (network only; STFT runs in JS) |
 | Best quality | `bs_roformer_sw_6stem_fp16_mm.onnx` | 353 MB | BS-RoFormer SW 6-stem (community weights, rehosted by jarredou), ONNX export by elicwhite; attention Einsums rewritten as MatMul (same output, ~15% faster). v1.3.0 used `bs_roformer_sw_6stem_fp16.onnx`. |
 
-The code is MIT, but the model weights are not covered by it: Meta describes the Demucs weights as for research use, and the BS-RoFormer SW weights have no stated license. ONNX Runtime is pinned to `onnxruntime-node@1.23.2`, the last version with Intel Mac support.
+The code is MIT, but the model weights are not covered by it: Meta describes the Demucs weights as for research use, and the BS-RoFormer SW weights have no stated license. ONNX Runtime is pinned to `onnxruntime-node@1.23.2`, the last version with Intel Mac support, and `onnxruntime-web@1.23.2` (the `ort.webgpu` bundle, which needs a recent Chromium: Electron 44 / Chromium 152). Set `SYNCWAVE_NO_GPU=1` to force the processor. On Intel Macs, SyncWave starts on the stronger graphics chip (`force_high_performance_gpu`): on two-chip MacBook Pros, macOS switching chips mid-run left the window partly undrawn.
 
 ## 🛠 Tech Stack
 

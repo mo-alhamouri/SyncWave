@@ -50,6 +50,12 @@ for ARCH in x64 arm64; do
   echo "$ort"
   echo "$ort" | grep -q "darwin/$OTHER/" && { echo "Found $OTHER ONNX Runtime in $ARCH build"; exit 1; }
   echo "$ort" | grep -q "darwin/$ARCH/onnxruntime_binding.node" || { echo "ONNX Runtime missing from $ARCH build"; exit 1; }
+  # Graphics-chip engine (ONNX Runtime Web) must be inside app.asar.
+  web=$(npx --yes @electron/asar list "$APPDIR/SyncWave.app/Contents/Resources/app.asar" | grep "onnxruntime-web/dist/" || true)
+  echo "$web"
+  for f in ort.webgpu.min.mjs ort-wasm-simd-threaded.asyncify.mjs ort-wasm-simd-threaded.asyncify.wasm; do
+    echo "$web" | grep -q "dist/$f\$" || { echo "ONNX Runtime Web file $f missing from $ARCH build"; exit 1; }
+  done
 done
 
 # Final check on what actually gets published: unpack each zip and make sure

@@ -1,6 +1,6 @@
 {
   "name": "syncwave-desktop",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "main": "electron/main.js",
   "scripts": {
     "setup": "npm install && npm run setup:frontend",
@@ -30,7 +30,15 @@
     "files": [
       "electron/**/*",
       "frontend/dist/**/*",
-      "!**/node_modules/onnxruntime-node/bin/napi-v6/linux/**"
+      "!**/node_modules/onnxruntime-node/bin/napi-v6/linux/**",
+      "!**/node_modules/onnxruntime-web/lib/**",
+      "!**/node_modules/onnxruntime-web/dist/*.map",
+      "!**/node_modules/onnxruntime-web/dist/*bundle*",
+      "!**/node_modules/onnxruntime-web/dist/*jsep*",
+      "!**/node_modules/onnxruntime-web/dist/ort.{all,wasm,webgl,node}.*",
+      "!**/node_modules/onnxruntime-web/dist/ort.{js,mjs,min.js,min.mjs}",
+      "!**/node_modules/onnxruntime-web/dist/ort.webgpu.{js,mjs,min.js}",
+      "!**/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.{mjs,wasm}"
     ],
     "asarUnpack": [
       "**/node_modules/@ffmpeg-installer/**/*",
@@ -65,7 +73,7 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
-    "electron": "^31.0.0",
+    "electron": "44.10.1",
     "electron-builder": "^24.13.3",
     "gh-pages": "^6.3.0",
     "wait-on": "^7.2.0"
@@ -76,6 +84,7 @@
     "electron-updater": "^6.1.7",
     "fix-path": "^3.0.0",
     "onnxruntime-node": "1.23.2",
+    "onnxruntime-web": "1.23.2",
     "yt-dlp-wrap": "^2.3.12"
   },
   "description": "SyncWave - download, trim, split and manage your media.",

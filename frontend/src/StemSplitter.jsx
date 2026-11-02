@@ -23,7 +23,7 @@ const STEMS = {
 const ORDER = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'];
 const MODES = {
   fast: { label: 'Fast', time: 'About 1–3 minutes per song', note: 'Good separation, much quicker.' },
-  best: { label: 'Best quality', time: 'About 3–7 minutes per song', note: 'Cleaner tracks with less bleed between instruments.' },
+  best: { label: 'Best quality', time: 'About 3–10 minutes per song', note: 'Cleaner tracks with less bleed between instruments.' },
 };
 const stemHint = (id, ids) => (id === 'other' && ids.includes('guitar') ? 'Synths, strings and the rest' : STEMS[id].hint);
 const MEDIA_EXT = /\.(mp3|wav|ogg|oga|opus|flac|m4a|aac|mp4|mov|m4v|mkv|webm|avi)$/i;
@@ -114,6 +114,7 @@ function StemSplitter({ ref, active, showToast }) {
   const [time, setTime] = useState(0);
   const [mode, setMode] = useState('fast');
   const [usedMode, setUsedMode] = useState('fast');
+  const [usedEngine, setUsedEngine] = useState('');
   const [models, setModels] = useState(null); // download status of each AI model
   const [saving, setSaving] = useState(null);
   const [savedMsg, setSavedMsg] = useState('');
@@ -263,6 +264,7 @@ function StemSplitter({ ref, active, showToast }) {
     const ids = ORDER.filter((s) => result.stems[s]);
     setStems(result.stems);
     setUsedMode(mode);
+    setUsedEngine(result.engine || '');
     setSourceIds(ids);
     setDuration(result.duration || 0);
     setPhase('done');
@@ -455,7 +457,12 @@ function StemSplitter({ ref, active, showToast }) {
               <div className="stems-title">
                 <h3 className="video-title">{file.name}</h3>
                 <span className="stems-time">{fmt(time)} / {fmt(duration)}</span>
-                <span className="stems-used-mode">{MODES[usedMode].label}</span>
+                <span
+                  className="stems-used-mode"
+                  title={usedEngine === 'gpu' ? 'Separated on the graphics chip' : usedEngine === 'cpu' ? 'Separated on the processor' : undefined}
+                >
+                  {MODES[usedMode].label}{usedEngine === 'gpu' ? ' · Graphics chip' : usedEngine === 'cpu' ? ' · Processor' : ''}
+                </span>
               </div>
               <div className="stems-view-toggle" role="tablist">
                 <button className={view === 'vocal' ? 'active' : ''} onClick={() => switchView('vocal')}>Vocals / Instrumental</button>

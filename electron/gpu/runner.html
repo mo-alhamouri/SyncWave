@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>SyncWave graphics engine</title></head>
+<body>
+<!-- Hidden window. Loads ONNX Runtime Web (WebGPU) and hands it to runner-preload.js,
+     which runs the separation. Only the app's own files are served here. -->
+<script type="module">
+try {
+    const ort = await import('syncwave-gpu://app/ort/ort.mjs');
+    window.__syncwaveOrt(ort, null);
+} catch (err) {
+    window.__syncwaveOrt(null, err);
+}
+</script>
+</body>
+</html>
