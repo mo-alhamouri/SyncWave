@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "models": {
+    "fast": {
+      "file": "htdemucs_6s.onnx",
+      "size": 114560331,
+      "sha256": "bb4eee07e48847fdc0d93190f74b5a4b52525ccbfb2a3024261c3a9c6f6b9077",
+      "parts": [
+        "models/fast/htdemucs_6s.onnx.000",
+        "models/fast/htdemucs_6s.onnx.001",
+        "models/fast/htdemucs_6s.onnx.002"
+      ]
+    },
+    "best": {
+      "file": "bs_roformer_sw_6stem_fp16_mm.onnx",
+      "size": 352781094,
+      "sha256": "b0df0d59c4767d3a6e2252f7025bd1a30e2a49d590c97e04dd4b5908957270b9",
+      "parts": [
+        "models/best/bs_roformer_sw_6stem_fp16_mm.onnx.000",
+        "models/best/bs_roformer_sw_6stem_fp16_mm.onnx.001",
+        "models/best/bs_roformer_sw_6stem_fp16_mm.onnx.002",
+        "models/best/bs_roformer_sw_6stem_fp16_mm.onnx.003",
+        "models/best/bs_roformer_sw_6stem_fp16_mm.onnx.004",
+        "models/best/bs_roformer_sw_6stem_fp16_mm.onnx.005",
+        "models/best/bs_roformer_sw_6stem_fp16_mm.onnx.006",
+        "models/best/bs_roformer_sw_6stem_fp16_mm.onnx.007"
+      ]
+    }
+  }
+}
