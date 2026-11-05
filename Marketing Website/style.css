@@ -483,6 +483,7 @@ nav a:hover {
     
     /* Hide specific nav items on mobile */
     .nav-link, .btn-nav { display: none; }
+    .nav-link.nav-try { display: inline-flex; }
 }
 
 /* One-line installer */
@@ -525,3 +526,11 @@ nav a:hover {
 .install-subtitle { text-align: center; margin: 0 0 24px; font-size: 1.15rem; color: #c7cbe0; }
 .install-note { text-align: center; color: #9ca3af; font-size: 0.92rem; margin-top: 20px; }
 .quick-install .install-note { text-align: left; margin: 0; }
+
+/* SyncWave Online (web app) links */
+.nav-link.nav-try { color: white; border: 1px solid rgba(139, 92, 246, 0.5); background: rgba(139, 92, 246, 0.12); padding: 0.45rem 1rem; border-radius: 999px; }
+.nav-link.nav-try:hover { background: rgba(139, 92, 246, 0.25); }
+.btn-try { align-self: center; color: #c4b5fd; font-weight: 700; text-decoration: none; width: fit-content; border-bottom: 1px solid rgba(196, 181, 253, 0.35); padding-bottom: 2px; transition: color 0.15s, border-color 0.15s; }
+.btn-try:hover { color: white; border-color: white; }
+.feature-try { display: inline-block; margin-top: 1.5rem; color: #c4b5fd; font-weight: 700; text-decoration: none; border: 1px solid rgba(139, 92, 246, 0.45); background: rgba(139, 92, 246, 0.1); padding: 0.7rem 1.3rem; border-radius: 12px; transition: background 0.2s, color 0.2s; }
+.feature-try:hover { background: rgba(139, 92, 246, 0.22); color: white; }

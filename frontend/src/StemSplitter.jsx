@@ -210,7 +210,11 @@ function StemSplitter({ ref, active, showToast }) {
   };
 
   const refreshModels = async () => {
-    if (window.electron && window.electron.getStemModels) setModels(await window.electron.getStemModels());
+    if (!window.electron || !window.electron.getStemModels) return;
+    const info = await window.electron.getStemModels();
+    setModels(info);
+    // The web version can't offer every mode in every browser.
+    setMode((m) => (info && info[m] && info[m].disabled ? 'fast' : m));
   };
 
   const chooseFile = async () => {
@@ -415,16 +419,18 @@ function StemSplitter({ ref, active, showToast }) {
                   {Object.entries(MODES).map(([id, m]) => {
                     const info = models && models[id];
                     return (
-                      <button key={id} type="button" role="radio" aria-checked={mode === id} className={`stems-mode ${mode === id ? 'active' : ''}`} onClick={() => setMode(id)}>
+                      <button key={id} type="button" role="radio" aria-checked={mode === id} className={`stems-mode ${mode === id ? 'active' : ''}`} onClick={() => setMode(id)} disabled={!!(info && info.disabled)}>
                         <span className="stems-mode-top">
                           <span className="stems-mode-dot"></span>
                           <span className="stems-mode-name">{m.label}</span>
-                          {info && (info.ready
-                            ? <span className="stems-mode-badge ready">Ready</span>
-                            : <span className="stems-mode-badge">One-time {info.sizeMB} MB download</span>)}
+                          {info && (info.disabled
+                            ? <span className="stems-mode-badge">Not available here</span>
+                            : info.ready
+                              ? <span className="stems-mode-badge ready">Ready</span>
+                              : <span className="stems-mode-badge">One-time {info.sizeMB} MB download</span>)}
                         </span>
-                        <span className="stems-mode-time">{m.time}</span>
-                        <span className="stems-mode-note">{m.note}</span>
+                        <span className="stems-mode-time">{(info && info.time) || m.time}</span>
+                        <span className="stems-mode-note">{(info && info.note) || m.note}</span>
                       </button>
                     );
                   })}

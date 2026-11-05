@@ -486,6 +486,8 @@ body {
 .stems-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
 .stems-mode { display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem; text-align: left; padding: 1.1rem 1.2rem; background: rgba(255,255,255,0.03); border: 1px solid var(--panel-border); border-radius: 16px; color: var(--text-primary); cursor: pointer; transition: all 0.2s; font-family: var(--font-body); }
 .stems-mode:hover { border-color: var(--panel-border-hover); background: rgba(255,255,255,0.05); }
+.stems-mode:disabled { opacity: 0.5; cursor: not-allowed; }
+.stems-mode:disabled:hover { border-color: var(--panel-border); background: rgba(255,255,255,0.03); }
 .stems-mode.active { border-color: rgba(139, 92, 246, 0.6); background: rgba(124, 58, 237, 0.12); box-shadow: inset 0 0 0 1px rgba(139, 92, 246, 0.35); }
 .stems-mode-top { display: flex; align-items: center; gap: 0.6rem; width: 100%; }
 .stems-mode-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--text-muted); flex-shrink: 0; }

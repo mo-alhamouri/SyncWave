@@ -41,7 +41,9 @@ Project layout:
 - `electron/stems.js`, `stems-worker.js`, `stems-engine.js`: Vocal Remover (model downloads, separation in a background process, STFT/iSTFT + ONNX Runtime)
 - `electron/gpu.js`, `electron/gpu/`: runs the separation on the graphics chip (WebGPU) in a hidden window with ONNX Runtime Web; falls back to the processor if it fails or its first result differs (checked once per model and app version, saved in `gpu-check.json` in the app's data folder)
 - `frontend/`: React UI (Vite)
+- `frontend/src/web/`, `frontend/web.html`: SyncWave Online, the website version of the Clip Trimmer and Vocal Remover (reuses the app's screens; `platform.js` stands in for the desktop app's `window.electron`)
 - `Marketing Website/`: the GitHub Pages site and `install.sh`
+- `scripts/build-web.sh`, `scripts/web-models.mjs`: build SyncWave Online into `Marketing Website/app/` (generated, not in git)
 - `scripts/adhoc-sign.js`: macOS ad-hoc signing hook for electron-builder
 
 ## 🏷 Releasing
@@ -51,6 +53,14 @@ Project layout:
 3. GitHub Actions (`.github/workflows/release.yml`) builds macOS (Intel + Apple Silicon) and Windows and publishes the release. Installed apps pick it up through **Update**.
 
 Website changes under `Marketing Website/` deploy automatically on push to `main` (`pages.yml`).
+
+### SyncWave Online (website)
+
+`https://mo-alhamouri.github.io/SyncWave/app/` runs the Clip Trimmer and Vocal Remover in the browser; files never leave the visitor's computer. The YouTube Downloader stays desktop-only.
+
+- `pages.yml` runs `scripts/build-web.sh` before publishing: it builds the web app, copies ONNX Runtime Web and ffmpeg.wasm next to it, and splits the AI models (same files and SHA-256 as the app, from the `models-v1` release) into parts under 50 MB. The browser downloads a model once and keeps it in Cache Storage.
+- The Vocal Remover uses the graphics chip (WebGPU) when the browser has one, else the processor (WebAssembly, Fast only). `coi-serviceworker.js` adds the cross-origin isolation headers GitHub Pages can't send, so WebAssembly can use several threads.
+- Preview locally: `bash scripts/build-web.sh && npx serve "Marketing Website"`, then open `/app/`. On a Mac it reuses the models the desktop app already downloaded.
 
 ### AI models (Vocal Remover)
 

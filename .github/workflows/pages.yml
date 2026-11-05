@@ -2,24 +2,51 @@ name: Deploy Marketing Website
 
 # Publishes the "Marketing Website" folder to the gh-pages branch, which
 # serves https://mo-alhamouri.github.io/SyncWave/
+# Before publishing, scripts/build-web.sh builds SyncWave Online (the web
+# Clip Trimmer and Vocal Remover) into "Marketing Website/app/", with its
+# engines and the AI models (taken from the models-v1 release, split into
+# parts). The gh-pages branch is replaced on every deploy (force_orphan), so
+# the ~500 MB of models never pile up in its history.
 on:
   push:
     branches: [main]
     paths:
       - 'Marketing Website/**'
+      - 'frontend/**'
+      - 'electron/stems.js'
+      - 'scripts/build-web.sh'
+      - 'scripts/web-models.mjs'
+      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Reuse downloaded AI models
+        uses: actions/cache@v4
+        with:
+          path: .web-cache
+          key: web-models-${{ hashFiles('electron/stems.js') }}
+      - run: npm ci --prefix frontend
+      - run: bash scripts/build-web.sh
       - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
           publish_dir: ./Marketing Website
+          force_orphan: true
           commit_message: 'Deploy website'
